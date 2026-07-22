@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Browser Data Analyzer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">Private, browser-only analysis</p>
+      <h1>Browser Data Analyzer</h1>
+      <p class="intro">Upload an Excel or CSV file, choose columns, compare responses, filter the view, and export charts without sending your data anywhere.</p>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <section class="upload-panel" aria-labelledby="upload-title">
+      <div>
+        <h2 id="upload-title">Upload your file</h2>
+        <p>Choose an Excel or CSV file. The first row will be used as column names.</p>
+      </div>
+      <label class="file-drop">
+        <span class="file-icon">+</span>
+        <span>
+          <strong>Select Excel or CSV file</strong>
+          <small>.xlsx, .xls, or .csv</small>
+        </span>
+        <input id="fileInput" type="file" accept=".xlsx,.xls,.csv">
+      </label>
+      <div id="statusMessage" class="status-message" role="status" aria-live="polite"></div>
+    </section>
+
+    <section id="fileDetails" class="file-details hidden" aria-labelledby="file-details-title">
+      <div class="section-heading">
+        <h2 id="file-details-title">File details</h2>
+        <label id="sheetPickerWrap" class="field compact hidden">
+          <span>Sheet</span>
+          <select id="sheetSelect"></select>
+        </label>
+      </div>
+      <div id="fileStats" class="stats-grid"></div>
+    </section>
+
+    <section id="previewSection" class="preview-section hidden" aria-labelledby="preview-title">
+      <div class="section-heading">
+        <h2 id="preview-title">Data preview</h2>
+        <p>First 20 rows</p>
+      </div>
+      <div id="previewTable" class="table-wrap"></div>
+    </section>
+
+    <section id="dashboardSection" class="dashboard-section hidden" aria-labelledby="dashboard-title">
+      <div class="section-heading dashboard-heading">
+        <div>
+          <h2 id="dashboard-title">Charts</h2>
+          <p id="dashboardHint">Create one or more views from the uploaded file.</p>
+        </div>
+        <button id="addChartBtn" class="primary-btn" type="button" title="Add another chart">Add chart</button>
+      </div>
+      <div id="chartGrid" class="chart-grid"></div>
+    </section>
+
+    <section id="emptyState" class="empty-state">
+      <h2>No file uploaded yet</h2>
+      <p>Upload a spreadsheet to preview the rows and start building charts.</p>
+    </section>
+  </main>
+
+  <template id="chartCardTemplate">
+    <article class="chart-card">
+      <div class="chart-card-header">
+        <input class="chart-title-input" type="text" aria-label="Chart name">
+        <div class="icon-actions">
+          <button class="icon-btn duplicate-chart" type="button" title="Duplicate chart">Copy</button>
+          <button class="icon-btn collapse-chart" type="button" title="Collapse or expand chart">Hide</button>
+          <button class="icon-btn danger delete-chart" type="button" title="Delete chart">Delete</button>
+        </div>
+      </div>
+
+      <div class="chart-card-body">
+        <div class="settings-grid">
+          <label class="field">
+            <span>Select a column to analyze</span>
+            <select class="primary-column"></select>
+          </label>
+
+          <label class="field">
+            <span>Compare with another column</span>
+            <select class="compare-column"></select>
+          </label>
+
+          <label class="field single-setting">
+            <span>Chart type</span>
+            <select class="chart-type">
+              <option value="bar">Vertical bar chart</option>
+              <option value="horizontalBar">Horizontal bar chart</option>
+              <option value="pie">Pie chart</option>
+              <option value="doughnut">Doughnut chart</option>
+              <option value="line">Line chart</option>
+              <option value="table">Table only</option>
+            </select>
+          </label>
+
+          <label class="field compare-setting hidden">
+            <span>Comparison view</span>
+            <select class="compare-type">
+              <option value="grouped">Grouped bar chart</option>
+              <option value="stacked">Stacked bar chart</option>
+              <option value="stacked100">100% stacked bar chart</option>
+              <option value="table">Comparison table</option>
+            </select>
+          </label>
+
+          <label class="field compare-setting hidden">
+            <span>Display values as</span>
+            <select class="compare-value-mode">
+              <option value="counts">Raw counts</option>
+              <option value="primaryPercent">Percentage within each primary response</option>
+              <option value="comparePercent">Percentage within each comparison group</option>
+              <option value="totalPercent">Percentage of the total dataset</option>
+            </select>
+          </label>
+
+          <label class="field single-setting">
+            <span>Sort responses</span>
+            <select class="sort-mode">
+              <option value="desc">Highest to lowest</option>
+              <option value="asc">Lowest to highest</option>
+              <option value="alpha">Alphabetically</option>
+            </select>
+          </label>
+
+          <label class="field single-setting">
+            <span>Show responses</span>
+            <select class="top-mode">
+              <option value="all">Show all responses</option>
+              <option value="5">Show only the top 5 responses</option>
+              <option value="10">Show only the top 10 responses</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="toggle-row single-setting">
+          <label><input class="show-counts" type="checkbox" checked> Show counts</label>
+          <label><input class="show-percentages" type="checkbox" checked> Show percentages</label>
+          <label><input class="include-blanks" type="checkbox" checked> Include blank responses</label>
+        </div>
+
+        <section class="filter-panel" aria-label="Filter this chart">
+          <div class="filter-header">
+            <div>
+              <h3>Filter this chart</h3>
+              <p class="row-count">Showing 0 of 0 rows</p>
+            </div>
+            <div class="button-row">
+              <button class="secondary-btn add-filter" type="button" title="Add another filter">Add another filter</button>
+              <button class="secondary-btn clear-filters" type="button" title="Clear all filters">Clear all filters</button>
+            </div>
+          </div>
+          <div class="filters-list"></div>
+        </section>
+
+        <div class="chart-area">
+          <canvas></canvas>
+          <div class="chart-empty hidden">No data is available for this chart.</div>
+        </div>
+
+        <section class="response-tools single-setting" aria-label="Search and response management">
+          <div class="section-heading compact-heading">
+            <h3>Summary</h3>
+            <input class="summary-search" type="search" placeholder="Search responses" aria-label="Search responses">
+          </div>
+          <div class="merge-row">
+            <input class="merge-name" type="text" placeholder="New combined name" aria-label="New combined response name">
+            <button class="secondary-btn merge-selected" type="button" title="Combine selected responses">Combine selected</button>
+            <button class="secondary-btn hide-selected" type="button" title="Hide selected responses">Hide selected</button>
+            <button class="secondary-btn reset-responses" type="button" title="Show hidden responses and undo manual combinations">Reset responses</button>
+          </div>
+        </section>
+
+        <div class="table-wrap summary-table"></div>
+
+        <div class="export-row">
+          <button class="secondary-btn export-png" type="button" title="Download chart as PNG">Download chart as PNG</button>
+          <button class="secondary-btn export-summary" type="button" title="Download summary table as CSV">Download summary table as CSV</button>
+          <button class="secondary-btn export-filtered" type="button" title="Download filtered rows as CSV">Download filtered data as CSV</button>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <template id="filterTemplate">
+    <div class="filter-card">
+      <div class="filter-top">
+        <label class="field">
+          <span>Filter column</span>
+          <select class="filter-column"></select>
+        </label>
+        <button class="icon-btn danger remove-filter" type="button" title="Remove this filter">Remove</button>
+      </div>
+      <input class="filter-search" type="search" placeholder="Search filter values" aria-label="Search filter values">
+      <div class="filter-values"></div>
+    </div>
+  </template>
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+  <script src="script.js"></script>
+</body>
+</html>
