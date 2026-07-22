@@ -2,6 +2,7 @@
   'use strict';
 
   const NO_RESPONSE = 'No Response';
+  const TABLE_ROW_LIMIT = 10;
   const COLORS = [
     '#006b5f', '#d99b22', '#4b7f9f', '#c75050', '#6b8e4e',
     '#7f5aa2', '#2f9c95', '#9b6a35', '#4c647a', '#d06b9a',
@@ -200,7 +201,7 @@
       compareType: 'grouped',
       compareValueMode: 'counts',
       sortMode: 'desc',
-      topMode: 'all',
+      topMode: '10',
       showCounts: true,
       showPercentages: true,
       includeBlanks: true,
@@ -499,22 +500,43 @@
       total += 1;
     });
 
-    const primaryLabels = Array.from(matrix.keys()).sort((a, b) => a.localeCompare(b));
-    const compareLabels = Array.from(comparisonLabels).sort((a, b) => a.localeCompare(b));
+    const rawPrimaryLabels = Array.from(matrix.keys());
+    const rawCompareLabels = Array.from(comparisonLabels);
+    const rawPrimaryTotals = new Map(rawPrimaryLabels.map(label => [
+      label,
+      rawCompareLabels.reduce((sum, compare) => sum + (matrix.get(label).get(compare) || 0), 0)
+    ]));
+    const rawCompareTotals = new Map(rawCompareLabels.map(label => [
+      label,
+      rawPrimaryLabels.reduce((sum, primary) => sum + (matrix.get(primary).get(label) || 0), 0)
+    ]));
+    const primaryLabels = capLabels(rawPrimaryLabels, rawPrimaryTotals, TABLE_ROW_LIMIT);
+    const compareLabels = capLabels(rawCompareLabels, rawCompareTotals, TABLE_ROW_LIMIT);
+    const cappedMatrix = new Map(primaryLabels.map(label => [label, new Map(compareLabels.map(compare => [compare, 0]))]));
+
+    rawPrimaryLabels.forEach(primary => {
+      const primaryLabel = primaryLabels.includes(primary) ? primary : 'Other';
+      rawCompareLabels.forEach(compare => {
+        const compareLabel = compareLabels.includes(compare) ? compare : 'Other';
+        const count = matrix.get(primary).get(compare) || 0;
+        cappedMatrix.get(primaryLabel).set(compareLabel, cappedMatrix.get(primaryLabel).get(compareLabel) + count);
+      });
+    });
+
     const primaryTotals = new Map(primaryLabels.map(label => [
       label,
-      compareLabels.reduce((sum, compare) => sum + (matrix.get(label).get(compare) || 0), 0)
+      compareLabels.reduce((sum, compare) => sum + (cappedMatrix.get(label).get(compare) || 0), 0)
     ]));
     const compareTotals = new Map(compareLabels.map(label => [
       label,
-      primaryLabels.reduce((sum, primary) => sum + (matrix.get(primary).get(label) || 0), 0)
+      primaryLabels.reduce((sum, primary) => sum + (cappedMatrix.get(primary).get(label) || 0), 0)
     ]));
 
     const valueMode = chart.compareType === 'stacked100' ? 'primaryPercent' : chart.compareValueMode;
     const datasets = compareLabels.map((compare, index) => ({
       label: compare,
       data: primaryLabels.map(primary => {
-        const count = matrix.get(primary).get(compare) || 0;
+        const count = cappedMatrix.get(primary).get(compare) || 0;
         if (valueMode === 'primaryPercent') return primaryTotals.get(primary) ? roundOne((count / primaryTotals.get(primary)) * 100) : 0;
         if (valueMode === 'comparePercent') return compareTotals.get(compare) ? roundOne((count / compareTotals.get(compare)) * 100) : 0;
         if (valueMode === 'totalPercent') return total ? roundOne((count / total) * 100) : 0;
@@ -530,7 +552,7 @@
       rows,
       labels: primaryLabels,
       compareLabels,
-      matrix,
+      matrix: cappedMatrix,
       primaryTotals,
       compareTotals,
       total,
@@ -597,15 +619,23 @@
             }
           },
           datalabels: {
-            color: '#1d2733',
-            anchor: 'end',
-            align: type === 'line' ? 'top' : 'end',
+            color: ['pie', 'doughnut'].includes(chart.chartType) ? '#ffffff' : '#1d2733',
+            anchor: ['pie', 'doughnut'].includes(chart.chartType) ? 'center' : 'end',
+            align: ['pie', 'doughnut'].includes(chart.chartType) ? 'center' : (type === 'line' ? 'top' : 'end'),
+            clamp: true,
+            clip: false,
+            textAlign: 'center',
+            font: context => ({
+              weight: '700',
+              size: ['pie', 'doughnut'].includes(chart.chartType) && context.dataset.data.length > 8 ? 10 : 11
+            }),
             formatter: (value, context) => {
               const item = result.items[context.dataIndex];
+              if (['pie', 'doughnut'].includes(chart.chartType) && item.rowPercent < 4) return '';
               const parts = [];
               if (chart.showCounts) parts.push(formatNumber(value));
               if (chart.showPercentages) parts.push(`${item.rowPercent}%`);
-              return parts.join(' | ');
+              return ['pie', 'doughnut'].includes(chart.chartType) ? parts.join('\n') : parts.join(' | ');
             }
           }
         },
@@ -661,7 +691,9 @@
     }
 
     const searchText = chart.summarySearch.trim().toLowerCase();
-    const visibleItems = result.items.filter(item => item.response.toLowerCase().includes(searchText));
+    const matchingItems = result.items.filter(item => item.response.toLowerCase().includes(searchText));
+    const visibleItems = matchingItems.slice(0, TABLE_ROW_LIMIT);
+    renderTableNote(card, matchingItems.length, 'responses');
     const html = `
       <table>
         <thead>
@@ -701,6 +733,7 @@
   function renderComparisonTable(chart, card, result) {
     const mode = result.valueMode || chart.compareValueMode;
     const suffix = mode === 'counts' ? '' : '%';
+    renderTableNote(card, result.labels.length, 'comparison rows');
     const rows = result.labels.map(primary => {
       const total = result.primaryTotals.get(primary) || 0;
       const cells = result.compareLabels.map(compare => {
@@ -734,6 +767,21 @@
     `;
   }
 
+  function renderTableNote(card, totalRows, label) {
+    const note = card.querySelector('.table-note');
+    if (!note) return;
+    note.textContent = totalRows > TABLE_ROW_LIMIT
+      ? `Showing first ${TABLE_ROW_LIMIT} ${label}.`
+      : '';
+  }
+
+  function capLabels(labels, totals, limit) {
+    const sorted = [...labels].sort((a, b) => (totals.get(b) || 0) - (totals.get(a) || 0) || a.localeCompare(b));
+    if (sorted.length <= limit) return sorted;
+    const topLabels = sorted.slice(0, limit - 1);
+    return topLabels.includes('Other') ? topLabels : [...topLabels, 'Other'];
+  }
+
   function sortItems(items, sortMode) {
     return [...items].sort((a, b) => {
       if (sortMode === 'asc') return a.count - b.count || a.response.localeCompare(b.response);
@@ -743,11 +791,11 @@
   }
 
   function applyTopGrouping(items, topMode, totalRows, nonBlankRows) {
-    const topCount = Number(topMode);
-    if (!topCount || items.length <= topCount) return items;
+    const topCount = Math.min(Number(topMode) || TABLE_ROW_LIMIT, TABLE_ROW_LIMIT);
+    if (items.length <= topCount) return items;
 
-    const topItems = items.slice(0, topCount);
-    const otherCount = items.slice(topCount).reduce((sum, item) => sum + item.count, 0);
+    const topItems = items.slice(0, topCount - 1);
+    const otherCount = items.slice(topCount - 1).reduce((sum, item) => sum + item.count, 0);
     if (otherCount > 0) {
       topItems.push({
         response: 'Other',

@@ -299,10 +299,27 @@ th.number {
   padding: 16px;
 }
 
+.chart-workspace {
+  display: grid;
+  grid-template-columns: minmax(230px, 300px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.settings-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.output-panel {
+  min-width: 0;
+}
+
 .settings-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(160px, 1fr));
-  gap: 12px;
+  grid-template-columns: 1fr;
+  gap: 10px;
 }
 
 .field {
@@ -313,7 +330,7 @@ th.number {
 
 .field span {
   color: #344957;
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   font-weight: 700;
 }
 
@@ -323,12 +340,13 @@ th.number {
 .merge-name,
 .filter-search {
   width: 100%;
-  min-height: 40px;
+  min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 8px 10px;
+  padding: 6px 8px;
   background: #fff;
   color: var(--ink);
+  font-size: 0.86rem;
 }
 
 .field select:focus,
@@ -345,11 +363,11 @@ th.number {
 }
 
 .toggle-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 18px;
-  margin: 14px 0;
+  display: grid;
+  gap: 8px;
+  margin: 0;
   color: #314654;
+  font-size: 0.86rem;
 }
 
 .toggle-row label {
@@ -360,8 +378,8 @@ th.number {
 
 .filter-panel,
 .response-tools {
-  margin-top: 16px;
-  padding: 14px;
+  margin-top: 0;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfe;
@@ -379,8 +397,9 @@ th.number {
 }
 
 .filter-header {
-  justify-content: space-between;
-  align-items: flex-start;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
 }
 
 .row-count {
@@ -390,29 +409,31 @@ th.number {
 .filters-list {
   display: grid;
   gap: 12px;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .filter-card {
-  padding: 12px;
+  padding: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
 }
 
 .filter-top {
-  justify-content: space-between;
-  align-items: end;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
 }
 
 .filter-values {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: 1fr;
   gap: 6px;
-  max-height: 180px;
+  max-height: 160px;
   margin-top: 10px;
   overflow: auto;
   padding-right: 4px;
+  font-size: 0.84rem;
 }
 
 .filter-values label {
@@ -427,8 +448,7 @@ th.number {
 
 .chart-area {
   position: relative;
-  min-height: 360px;
-  margin-top: 16px;
+  min-height: 380px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -437,7 +457,7 @@ th.number {
 
 .chart-area canvas {
   width: 100% !important;
-  height: 340px !important;
+  height: 356px !important;
 }
 
 .chart-empty {
@@ -460,11 +480,18 @@ th.number {
 }
 
 .summary-search {
-  max-width: 260px;
+  max-width: none;
 }
 
 .summary-table {
-  margin-top: 14px;
+  margin-top: 8px;
+}
+
+.table-note {
+  min-height: 22px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.84rem;
 }
 
 .export-row {
@@ -475,10 +502,11 @@ th.number {
 .primary-btn,
 .secondary-btn,
 .icon-btn {
-  min-height: 38px;
+  min-height: 34px;
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 8px 12px;
+  padding: 7px 10px;
+  font-size: 0.86rem;
   font-weight: 700;
 }
 
@@ -537,9 +565,31 @@ th.number {
 
 @media (max-width: 900px) {
   .upload-panel,
-  .settings-grid,
   .stats-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .chart-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+
+  .toggle-row {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .filter-header,
+  .filter-top {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .filter-values {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   }
 }
 
