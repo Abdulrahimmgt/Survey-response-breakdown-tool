@@ -70,17 +70,18 @@
     loadPublicSheetBtn: document.getElementById('loadPublicSheetBtn'),
     reportStatus: document.getElementById('reportStatus'),
     configSheetSelect: document.getElementById('configSheetSelect'),
-    configRowSelect: document.getElementById('configRowSelect'),
+    configSurveyChecklist: document.getElementById('configSurveyChecklist'),
     reportNameInput: document.getElementById('reportNameInput'),
     reportDataSheetSelect: document.getElementById('reportDataSheetSelect'),
     questionSheetSelect: document.getElementById('questionSheetSelect'),
     questionColumnSelect: document.getElementById('questionColumnSelect'),
     displayColumnSelect: document.getElementById('displayColumnSelect'),
-    breakdownColumnSelect: document.getElementById('breakdownColumnSelect'),
+    questionChecklist: document.getElementById('questionChecklist'),
+    breakdownChecklist: document.getElementById('breakdownChecklist'),
     siteSheetSelect: document.getElementById('siteSheetSelect'),
     dataSiteColumnSelect: document.getElementById('dataSiteColumnSelect'),
     siteKeyColumnSelect: document.getElementById('siteKeyColumnSelect'),
-    siteColumnSelect: document.getElementById('siteColumnSelect'),
+    siteChecklist: document.getElementById('siteChecklist'),
     generateReportBtn: document.getElementById('generateReportBtn'),
     downloadReportCsvBtn: document.getElementById('downloadReportCsvBtn'),
     downloadReportXlsxBtn: document.getElementById('downloadReportXlsxBtn'),
@@ -98,9 +99,10 @@
   els.loadPublicSheetBtn.addEventListener('click', loadPublicGoogleSheet);
   els.reportSourceSelect.addEventListener('change', renderReportControls);
   els.configSheetSelect.addEventListener('change', renderConfigOptions);
-  els.configRowSelect.addEventListener('change', applySelectedConfig);
   els.reportDataSheetSelect.addEventListener('change', renderReportColumns);
   els.questionSheetSelect.addEventListener('change', renderQuestionColumns);
+  els.questionColumnSelect.addEventListener('change', renderQuestionChecklist);
+  els.displayColumnSelect.addEventListener('change', renderQuestionChecklist);
   els.siteSheetSelect.addEventListener('change', renderSiteColumns);
   els.generateReportBtn.addEventListener('click', generateDistributionReport);
   els.downloadReportCsvBtn.addEventListener('click', downloadDistributionCsv);
@@ -1001,9 +1003,9 @@
     const source = getSelectedReportSource();
     const disabled = !source;
     [
-      els.configSheetSelect, els.configRowSelect, els.reportNameInput, els.reportDataSheetSelect,
-      els.questionSheetSelect, els.questionColumnSelect, els.displayColumnSelect, els.breakdownColumnSelect,
-      els.siteSheetSelect, els.dataSiteColumnSelect, els.siteKeyColumnSelect, els.siteColumnSelect,
+      els.configSheetSelect, els.reportNameInput, els.reportDataSheetSelect,
+      els.questionSheetSelect, els.questionColumnSelect, els.displayColumnSelect,
+      els.siteSheetSelect, els.dataSiteColumnSelect, els.siteKeyColumnSelect,
       els.generateReportBtn, els.downloadReportCsvBtn, els.downloadReportXlsxBtn
     ].forEach(control => {
       control.disabled = disabled;
@@ -1014,6 +1016,10 @@
       els.reportDataSheetSelect.innerHTML = '<option value="">No sheets</option>';
       els.questionSheetSelect.innerHTML = '<option value="">No sheets</option>';
       els.siteSheetSelect.innerHTML = '<option value="">No site lookup</option>';
+      renderCheckboxList(els.configSurveyChecklist, [], { emptyText: 'No surveys found' });
+      renderCheckboxList(els.questionChecklist, [], { emptyText: 'No question columns found' });
+      renderCheckboxList(els.breakdownChecklist, [], { emptyText: 'No breakdown columns found' });
+      renderCheckboxList(els.siteChecklist, [], { emptyText: 'No site columns found' });
       return;
     }
 
@@ -1026,34 +1032,39 @@
     renderReportColumns();
     renderQuestionColumns();
     renderSiteColumns();
+    syncChecklistDefaultsFromConfig();
   }
 
   function renderConfigOptions() {
     const source = getSelectedReportSource();
     if (!source || !els.configSheetSelect.value) {
-      els.configRowSelect.innerHTML = '<option value="">No config rows</option>';
+      renderCheckboxList(els.configSurveyChecklist, [], { emptyText: 'No surveys found' });
       return;
     }
 
     const configs = parseConfigRows(source.workbook, els.configSheetSelect.value);
-    els.configRowSelect.dataset.configs = JSON.stringify(configs);
-    els.configRowSelect.innerHTML = configs.length
-      ? ['<option value="">Choose a config row</option>', ...configs.map((config, index) => {
-        const label = `${config.survey || 'Unnamed survey'}${config.generate ? '' : ' (not marked TRUE)'}`;
-        return `<option value="${index}">${escapeHtml(label)}</option>`;
-      })].join('')
-      : '<option value="">No config rows found</option>';
-  }
-
-  function applySelectedConfig() {
-    const configs = JSON.parse(els.configRowSelect.dataset.configs || '[]');
-    const config = configs[Number(els.configRowSelect.value)];
-    if (!config) return;
-
-    els.reportNameInput.value = config.newSheetName || config.survey || 'Distribution';
-    selectMultipleValues(els.breakdownColumnSelect, config.disaggCols);
-    selectMultipleValues(els.siteColumnSelect, config.siteDisaggCols);
-    showReportStatus('Config row applied. Confirm the raw data and question list sheets, then generate the report.', '');
+    const defaultChecked = configs.some(config => config.generate)
+      ? configs.filter(config => config.generate).map(config => config.survey)
+      : configs.map(config => config.survey);
+    renderCheckboxList(
+      els.configSurveyChecklist,
+      configs.map(config => ({
+        value: config.survey,
+        label: `${config.survey}${config.generate ? '' : ' (not marked TRUE)'}`,
+        meta: config
+      })),
+      {
+        checkedValues: defaultChecked,
+        emptyText: 'No survey rows found',
+        onChange: syncChecklistDefaultsFromConfig
+      }
+    );
+    els.configSurveyChecklist.dataset.configs = JSON.stringify(configs);
+    const firstChecked = configs.find(config => defaultChecked.includes(config.survey));
+    if (firstChecked && !normalizeValue(els.reportNameInput.value)) {
+      els.reportNameInput.value = firstChecked.newSheetName || firstChecked.survey || 'Distribution';
+    }
+    syncChecklistDefaultsFromConfig();
   }
 
   function renderReportColumns() {
@@ -1061,8 +1072,12 @@
     const columns = source && els.reportDataSheetSelect.value
       ? getSheetColumns(source.workbook, els.reportDataSheetSelect.value)
       : [];
-    populateSelect(els.breakdownColumnSelect, columns, '', false);
+    renderCheckboxList(els.breakdownChecklist, columns.map(column => ({ value: column, label: column })), {
+      checkedValues: [],
+      emptyText: 'No columns found'
+    });
     populateSelect(els.dataSiteColumnSelect, columns, pickColumn(columns, /^site$/i), true, 'No site column');
+    syncChecklistDefaultsFromConfig();
   }
 
   function renderQuestionColumns() {
@@ -1072,6 +1087,31 @@
       : [];
     populateSelect(els.questionColumnSelect, columns, pickColumn(columns, /question|survey/i), false);
     populateSelect(els.displayColumnSelect, columns, pickColumn(columns, /display|text|label|name/i), true, 'Same as question column');
+    renderQuestionChecklist();
+  }
+
+  function renderQuestionChecklist() {
+    const source = getSelectedReportSource();
+    if (!source || !els.questionSheetSelect.value || !els.questionColumnSelect.value) {
+      renderCheckboxList(els.questionChecklist, [], { emptyText: 'No question columns found' });
+      return;
+    }
+
+    const questionRows = getSheetRecords(source.workbook, els.questionSheetSelect.value);
+    const questionColumn = els.questionColumnSelect.value;
+    const displayColumn = els.displayColumnSelect.value;
+    const questions = questionRows
+      .map(row => {
+        const value = normalizeValue(row[questionColumn]);
+        const display = displayColumn ? normalizeValue(row[displayColumn]) : '';
+        return value ? { value, label: display || value, display } : null;
+      })
+      .filter(Boolean);
+
+    renderCheckboxList(els.questionChecklist, questions, {
+      checkedValues: questions.map(question => question.value),
+      emptyText: 'No question rows found'
+    });
   }
 
   function renderSiteColumns() {
@@ -1080,7 +1120,11 @@
       ? getSheetColumns(source.workbook, els.siteSheetSelect.value)
       : [];
     populateSelect(els.siteKeyColumnSelect, columns, pickColumn(columns, /^site$|site name/i), true, 'No lookup key');
-    populateSelect(els.siteColumnSelect, columns.filter(column => !/^site$/i.test(column)), '', false);
+    renderCheckboxList(els.siteChecklist, columns.filter(column => !/^site$/i.test(column)).map(column => ({ value: column, label: column })), {
+      checkedValues: [],
+      emptyText: 'No site columns found'
+    });
+    syncChecklistDefaultsFromConfig();
   }
 
   function generateDistributionReport() {
@@ -1092,23 +1136,18 @@
 
     try {
       const dataRows = getSheetRecords(source.workbook, els.reportDataSheetSelect.value);
-      const questionRows = getSheetRecords(source.workbook, els.questionSheetSelect.value);
-      const questionColumn = els.questionColumnSelect.value;
-      const displayColumn = els.displayColumnSelect.value;
       const reportName = normalizeValue(els.reportNameInput.value) || 'Distribution';
-      const selectedBreakdowns = getSelectedOptions(els.breakdownColumnSelect);
-      const selectedSiteColumns = getSelectedOptions(els.siteColumnSelect);
+      const selectedBreakdowns = getCheckedValues(els.breakdownChecklist);
+      const selectedSiteColumns = getCheckedValues(els.siteChecklist);
       const mergedRows = mergeSiteColumns(dataRows, selectedSiteColumns);
       const breakdownColumns = uniqueList([...selectedBreakdowns, ...selectedSiteColumns]).filter(column => column && column in (mergedRows[0] || {}));
-      const questions = questionRows
-        .map(row => ({
-          column: normalizeValue(row[questionColumn]),
-          display: displayColumn ? normalizeValue(row[displayColumn]) : ''
-        }))
-        .filter(question => question.column);
+      const questions = getCheckedItems(els.questionChecklist).map(item => ({
+        column: item.value,
+        display: item.label
+      }));
 
       if (!mergedRows.length) throw new Error('The raw data sheet has no rows.');
-      if (!questions.length) throw new Error('The question list has no usable questions.');
+      if (!questions.length) throw new Error('Select at least one question column to include.');
 
       const output = buildDistributionOutput(mergedRows, questions, breakdownColumns);
       state.reportResult = {
@@ -1426,15 +1465,75 @@
     return matches.length ? matches : fallbackIndices;
   }
 
-  function selectMultipleValues(select, values) {
+  function renderCheckboxList(container, items, options = {}) {
+    const normalizedItems = items.map(item => typeof item === 'string' ? { value: item, label: item } : item);
+    const checkedValues = options.checkedValues === undefined
+      ? normalizedItems.map(item => item.value)
+      : options.checkedValues;
+    const checked = new Set(checkedValues.map(normalizeValue));
+
+    if (!normalizedItems.length) {
+      container.innerHTML = `<div class="checklist-empty">${escapeHtml(options.emptyText || 'No options found')}</div>`;
+      return;
+    }
+
+    container.innerHTML = normalizedItems.map((item, index) => {
+      const id = `${container.id}-${hashString(item.value)}-${index}`;
+      const isChecked = checked.has(normalizeValue(item.value));
+      return `
+        <label for="${id}">
+          <input id="${id}" type="checkbox" value="${escapeAttr(item.value)}" data-label="${escapeAttr(item.label || item.value)}" ${isChecked ? 'checked' : ''}>
+          <span>${escapeHtml(item.label || item.value)}</span>
+        </label>
+      `;
+    }).join('');
+
+    if (options.onChange) {
+      container.querySelectorAll('input[type="checkbox"]').forEach(input => {
+        input.addEventListener('change', options.onChange);
+      });
+    }
+  }
+
+  function getCheckedValues(container) {
+    return Array.from(container.querySelectorAll('input[type="checkbox"]:checked'))
+      .map(input => input.value)
+      .filter(Boolean);
+  }
+
+  function getCheckedItems(container) {
+    return Array.from(container.querySelectorAll('input[type="checkbox"]:checked'))
+      .map(input => ({
+        value: input.value,
+        label: input.dataset.label || input.value
+      }))
+      .filter(item => item.value);
+  }
+
+  function setCheckedValues(container, values) {
     const selected = new Set(values.map(normalizeValue));
-    Array.from(select.options).forEach(option => {
-      option.selected = selected.has(option.value);
+    container.querySelectorAll('input[type="checkbox"]').forEach(input => {
+      input.checked = selected.has(normalizeValue(input.value));
     });
   }
 
-  function getSelectedOptions(select) {
-    return Array.from(select.selectedOptions).map(option => option.value).filter(Boolean);
+  function syncChecklistDefaultsFromConfig() {
+    const configs = JSON.parse(els.configSurveyChecklist.dataset.configs || '[]');
+    if (!configs.length) return;
+
+    const checkedSurveys = new Set(getCheckedValues(els.configSurveyChecklist));
+    const selectedConfigs = configs.filter(config => checkedSurveys.has(config.survey));
+    if (!selectedConfigs.length) return;
+
+    const reportNames = selectedConfigs.map(config => config.newSheetName || config.survey).filter(Boolean);
+    if (reportNames.length && (!normalizeValue(els.reportNameInput.value) || normalizeValue(els.reportNameInput.value) === 'Distribution')) {
+      els.reportNameInput.value = reportNames.length === 1 ? reportNames[0] : 'Distribution';
+    }
+
+    const breakdownDefaults = uniqueList(selectedConfigs.flatMap(config => config.disaggCols || []));
+    const siteDefaults = uniqueList(selectedConfigs.flatMap(config => config.siteDisaggCols || []));
+    if (breakdownDefaults.length) setCheckedValues(els.breakdownChecklist, breakdownDefaults);
+    if (siteDefaults.length) setCheckedValues(els.siteChecklist, siteDefaults);
   }
 
   function getReportUniqueValues(rows, column) {

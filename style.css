@@ -600,14 +600,50 @@ th.number {
   background: #fbfcfe;
 }
 
-.report-settings-panel select[multiple] {
-  min-height: 100px;
-}
-
 .two-col-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+
+.checklist-box {
+  display: grid;
+  gap: 6px;
+  max-height: 150px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.checklist-box.tall {
+  max-height: 210px;
+}
+
+.checklist-box label {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  padding: 5px 6px;
+  border-radius: 6px;
+  font-size: 0.84rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.checklist-box label:hover {
+  background: var(--panel-soft);
+}
+
+.checklist-box input {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.checklist-empty {
+  color: var(--muted);
+  font-size: 0.84rem;
 }
 
 .report-divider {

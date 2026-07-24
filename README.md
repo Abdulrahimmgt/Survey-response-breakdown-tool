@@ -13,7 +13,8 @@ A simple static web app for analyzing Excel and CSV survey-style data directly i
 - Add one or more checklist filters.
 - Hide selected responses or manually combine similar response labels.
 - Generate sheet-style distribution reports from an uploaded workbook or public Google Sheet.
-- Use an input/config sheet to choose the report name and breakdown columns.
+- Use an input/config sheet to suggest the report name and default breakdown columns.
+- Choose the question columns to include with checked lists.
 - Merge optional site-level columns into the report.
 - View the generated distribution table in the app with percentage heat maps.
 - Export chart images, summary tables, and filtered data as CSV.
@@ -47,6 +48,8 @@ For best results, include sheets like:
 - A question list sheet with a question-column field and optional display-name field.
 - An optional input/config sheet with columns such as `Survey`, `Generate`, `New Sheet Name`, `Breakdown 1`, `Breakdown 2`, `Breakdown 3`, and site-level breakdown columns.
 - An optional site lookup sheet with a `Site` column and site-level characteristics.
+
+Survey and question choices appear checked by default so you can uncheck anything you do not want in the output.
 
 Private Google Sheets are not connected in this version because that would require Google sign-in/API setup.
 

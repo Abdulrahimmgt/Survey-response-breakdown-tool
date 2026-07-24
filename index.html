@@ -91,10 +91,10 @@
             <span>Input/config sheet</span>
             <select id="configSheetSelect"></select>
           </label>
-          <label class="field">
-            <span>Config row to use</span>
-            <select id="configRowSelect"></select>
-          </label>
+          <div class="field">
+            <span>Surveys from config</span>
+            <div id="configSurveyChecklist" class="checklist-box"></div>
+          </div>
           <label class="field">
             <span>Output report name</span>
             <input id="reportNameInput" type="text" placeholder="Distribution">
@@ -117,10 +117,14 @@
               <select id="displayColumnSelect"></select>
             </label>
           </div>
-          <label class="field">
+          <div class="field">
+            <span>Questions to include</span>
+            <div id="questionChecklist" class="checklist-box tall"></div>
+          </div>
+          <div class="field">
             <span>Break down by</span>
-            <select id="breakdownColumnSelect" multiple size="5"></select>
-          </label>
+            <div id="breakdownChecklist" class="checklist-box"></div>
+          </div>
           <div class="report-divider"></div>
           <label class="field">
             <span>Site lookup sheet</span>
@@ -136,10 +140,10 @@
               <select id="siteKeyColumnSelect"></select>
             </label>
           </div>
-          <label class="field">
+          <div class="field">
             <span>Site-level columns to add</span>
-            <select id="siteColumnSelect" multiple size="4"></select>
-          </label>
+            <div id="siteChecklist" class="checklist-box"></div>
+          </div>
           <div class="button-row report-actions">
             <button id="generateReportBtn" class="primary-btn" type="button" title="Generate distribution report">Generate report</button>
             <button id="downloadReportCsvBtn" class="secondary-btn" type="button" title="Download report as CSV">Download CSV</button>
