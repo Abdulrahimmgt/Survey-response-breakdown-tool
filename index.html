@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Browser Data Analyzer</title>
+  <title>Survey Response Breakdown Tool</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="app-header">
     <div>
-      <p class="eyebrow">Private, browser-only analysis</p>
-      <h1>Browser Data Analyzer</h1>
-      <p class="intro">Upload an Excel or CSV file, choose columns, compare responses, filter the view, and export charts without sending your data anywhere.</p>
+      <p class="eyebrow">Private survey analysis</p>
+      <h1>Survey Response Breakdown Tool</h1>
+      <p class="intro">Upload an Excel or CSV file, or load a public Google Sheet, then create charts, compare response columns, filter results, and export distribution reports.</p>
     </div>
   </header>
 
@@ -19,7 +19,7 @@
     <section class="upload-panel" aria-labelledby="upload-title">
       <div>
         <h2 id="upload-title">Upload your file</h2>
-        <p>Choose an Excel or CSV file. The first row will be used as column names.</p>
+        <p>Choose an Excel or CSV file. The first row will be used as column names, and the original data will stay unchanged.</p>
       </div>
       <label class="file-drop">
         <span class="file-icon">+</span>
@@ -55,7 +55,7 @@
       <div class="section-heading dashboard-heading">
         <div>
           <h2 id="dashboard-title">Charts</h2>
-          <p id="dashboardHint">Create one or more views from the uploaded file.</p>
+          <p id="dashboardHint">Create one or more views from the active data source.</p>
         </div>
         <button id="addChartBtn" class="primary-btn" type="button" title="Add another chart">Add chart</button>
       </div>
@@ -98,6 +98,7 @@
           <div class="field">
             <span>Response columns to include</span>
             <div id="questionChecklist" class="checklist-box tall"></div>
+            <div id="reportColumnNote" class="column-note"></div>
           </div>
           <div class="two-col-fields">
             <label class="field">
@@ -212,6 +213,9 @@
             <div class="toggle-row single-setting">
               <label><input class="show-counts" type="checkbox" checked> Show counts</label>
               <label><input class="show-percentages" type="checkbox" checked> Show percentages</label>
+            </div>
+
+            <div class="toggle-row">
               <label><input class="include-blanks" type="checkbox" checked> Include blank responses</label>
             </div>
 

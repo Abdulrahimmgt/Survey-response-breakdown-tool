@@ -3,6 +3,7 @@
 
   const NO_RESPONSE = 'No Response';
   const TABLE_ROW_LIMIT = 10;
+  const REPORT_UNIQUE_VALUE_LIMIT = 15;
   const UPLOADED_SOURCE_ID = 'uploaded-workbook';
   const COLORS = [
     '#006b5f', '#d99b22', '#4b7f9f', '#c75050', '#6b8e4e',
@@ -72,6 +73,7 @@
     reportNameInput: document.getElementById('reportNameInput'),
     reportDataSheetSelect: document.getElementById('reportDataSheetSelect'),
     questionChecklist: document.getElementById('questionChecklist'),
+    reportColumnNote: document.getElementById('reportColumnNote'),
     primaryBreakdownSelect: document.getElementById('primaryBreakdownSelect'),
     secondaryBreakdownSelect: document.getElementById('secondaryBreakdownSelect'),
     generateReportBtn: document.getElementById('generateReportBtn'),
@@ -120,11 +122,8 @@
         throw new Error('No sheets were found in this file.');
       }
 
-      state.workbook = workbook;
-      state.fileName = file.name;
       upsertReportSource(UPLOADED_SOURCE_ID, `Uploaded: ${file.name}`, workbook);
-      populateSheetSelector(workbook.SheetNames);
-      loadSheet(workbook.SheetNames[0]);
+      activateWorkbook(workbook, file.name, workbook.SheetNames[0]);
 
       if (state.rows.length > 50000) {
         showStatus('Large file warning: this app is designed for normal files up to about 50,000 rows. It may take longer to update charts.', 'warning');
@@ -136,6 +135,13 @@
       resetDataset();
       showStatus('This file could not be opened. It may be damaged or in an unsupported format.', 'error');
     }
+  }
+
+  function activateWorkbook(workbook, fileName, sheetName) {
+    state.workbook = workbook;
+    state.fileName = fileName;
+    populateSheetSelector(workbook.SheetNames);
+    loadSheet(sheetName || workbook.SheetNames[0]);
   }
 
   function populateSheetSelector(sheetNames) {
@@ -547,6 +553,7 @@
     rows.forEach(row => {
       const primary = getMergedLabel(getResponseLabel(row[chart.primaryColumn]), chart.merges);
       const comparison = getResponseLabel(row[chart.compareColumn]);
+      if (!chart.includeBlanks && (primary === NO_RESPONSE || comparison === NO_RESPONSE)) return;
       if (chart.hiddenResponses.has(primary)) return;
       if (!matrix.has(primary)) matrix.set(primary, new Map());
       matrix.get(primary).set(comparison, (matrix.get(primary).get(comparison) || 0) + 1);
@@ -951,8 +958,10 @@
       if (!workbook.SheetNames.length) throw new Error('No sheets found');
       const sourceName = `Google Sheet: ${sheetId.slice(0, 8)}...`;
       upsertReportSource(`google-${sheetId}`, sourceName, workbook);
+      activateWorkbook(workbook, sourceName, workbook.SheetNames[0]);
       els.reportSourceSelect.value = `google-${sheetId}`;
       renderReportControls();
+      showStatus('Public Google Sheet loaded. Your charts now use this data source.', '');
       showReportStatus('Public Google Sheet loaded. It is used only in this browser session.', '');
     } catch (error) {
       console.error(error);
@@ -1002,6 +1011,7 @@
       els.primaryBreakdownSelect.innerHTML = '<option value="">No breakdown</option>';
       els.secondaryBreakdownSelect.innerHTML = '<option value="">No extra breakdown</option>';
       renderCheckboxList(els.questionChecklist, [], { emptyText: 'No response columns found' });
+      updateReportColumnNote([]);
       return;
     }
 
@@ -1013,17 +1023,39 @@
 
   function renderReportColumns() {
     const source = getSelectedReportSource();
-    const columns = source && els.reportDataSheetSelect.value
-      ? getSheetColumns(source.workbook, els.reportDataSheetSelect.value)
-      : [];
+    const sheetName = els.reportDataSheetSelect.value;
+    const columns = source && sheetName ? getSheetColumns(source.workbook, sheetName) : [];
+    const dataRows = source && sheetName ? getSheetRecords(source.workbook, sheetName) : [];
+    const columnStats = columns.map(column => ({
+      column,
+      uniqueCount: getReportUniqueValues(dataRows, column).length
+    }));
+    const eligibleColumns = columnStats
+      .filter(item => item.uniqueCount <= REPORT_UNIQUE_VALUE_LIMIT)
+      .map(item => item.column);
+    const ignoredColumns = columnStats.filter(item => item.uniqueCount > REPORT_UNIQUE_VALUE_LIMIT);
     const responseColumns = columns.filter(column => !isLikelyMetadataColumn(column));
-    const defaultResponseColumns = responseColumns.length ? responseColumns : columns;
-    renderCheckboxList(els.questionChecklist, columns.map(column => ({ value: column, label: column })), {
-      checkedValues: defaultResponseColumns,
+    const defaultResponseColumns = responseColumns.filter(column => eligibleColumns.includes(column));
+    renderCheckboxList(els.questionChecklist, eligibleColumns.map(column => ({ value: column, label: column })), {
+      checkedValues: defaultResponseColumns.length ? defaultResponseColumns : eligibleColumns,
       emptyText: 'No response columns found'
     });
-    populateSelect(els.primaryBreakdownSelect, columns, pickColumn(columns, /frequency|program|type|group|category|site|survey|test_name/i), true, 'No main breakdown');
-    populateSelect(els.secondaryBreakdownSelect, columns, pickColumn(columns, /test_name|pre|post|survey/i), true, 'No extra breakdown');
+    populateSelect(els.primaryBreakdownSelect, eligibleColumns, pickColumn(eligibleColumns, /frequency|program|type|group|category|site|survey|test_name/i), true, 'No main breakdown');
+    populateSelect(els.secondaryBreakdownSelect, eligibleColumns, pickColumn(eligibleColumns, /test_name|pre|post|survey/i), true, 'No extra breakdown');
+    updateReportColumnNote(ignoredColumns);
+  }
+
+  function updateReportColumnNote(ignoredColumns) {
+    if (!els.reportColumnNote) return;
+    if (!ignoredColumns.length) {
+      els.reportColumnNote.textContent = `Only columns with ${REPORT_UNIQUE_VALUE_LIMIT} or fewer unique responses are shown here.`;
+      return;
+    }
+
+    const names = ignoredColumns.slice(0, 4).map(item => item.column).join(', ');
+    const extra = ignoredColumns.length > 4 ? `, and ${ignoredColumns.length - 4} more` : '';
+    const reason = ignoredColumns.length === 1 ? 'it has' : 'they have';
+    els.reportColumnNote.textContent = `${ignoredColumns.length} column${ignoredColumns.length === 1 ? '' : 's'} hidden because ${reason} more than ${REPORT_UNIQUE_VALUE_LIMIT} unique responses: ${names}${extra}.`;
   }
 
   function generateDistributionReport() {
@@ -1400,8 +1432,8 @@
   function normalizeForMatch(value) {
     return normalizeValue(value)
       .toLowerCase()
-      .replace(/[’‘]/g, "'")
-      .replace(/[“”]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201c\u201d]/g, '"')
       .replace(/\s+/g, ' ')
       .trim();
   }

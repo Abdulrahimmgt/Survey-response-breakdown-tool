@@ -651,6 +651,12 @@ th.number {
   font-size: 0.84rem;
 }
 
+.column-note {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .report-divider {
   height: 1px;
   background: var(--line);
@@ -690,24 +696,35 @@ th.number {
 }
 
 .distribution-output table {
-  min-width: 960px;
+  min-width: 760px;
+  table-layout: auto;
 }
 
 .distribution-output th,
 .distribution-output td {
   font-size: 0.82rem;
-  min-width: 92px;
+  line-height: 1.25;
+  min-width: 76px;
+  max-width: 180px;
   white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .distribution-output td.number,
 .distribution-output th.number {
+  min-width: 68px;
   white-space: nowrap;
+  text-align: right;
 }
 
 .distribution-output .question-title {
-  min-width: 280px;
-  max-width: 440px;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 220px;
+  max-width: 320px;
+  background: #fff;
   color: var(--ink);
   font-weight: 700;
   white-space: normal;
@@ -717,6 +734,14 @@ th.number {
   background: #eef4f7;
   color: #29404b;
   font-weight: 700;
+}
+
+.distribution-output td:first-child:not(.question-title) {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  max-width: 260px;
+  background: #fff;
 }
 
 .distribution-output .report-spacer td {
