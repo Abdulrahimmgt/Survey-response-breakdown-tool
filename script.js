@@ -3,10 +3,39 @@
 
   const NO_RESPONSE = 'No Response';
   const TABLE_ROW_LIMIT = 10;
+  const UPLOADED_SOURCE_ID = 'uploaded-workbook';
   const COLORS = [
     '#006b5f', '#d99b22', '#4b7f9f', '#c75050', '#6b8e4e',
     '#7f5aa2', '#2f9c95', '#9b6a35', '#4c647a', '#d06b9a',
     '#6c8fbd', '#b6a136', '#3a8d5d', '#875c74'
+  ];
+  const ANSWER_SETS = [
+    ['Strongly disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly agree'],
+    ['Not at all', 'Not really', 'Kind of', 'Definitely', 'Absolutely'],
+    ['Never', 'Almost never', 'Sometimes', 'Lots of times', 'All the time'],
+    ['1: Bad', '2: Okay', '3: Good', '4: Great', '5: Amazing'],
+    ['1: Not confident at all', '2: Slightly confident', '3: Somewhat confident', '4: Very confident', '5: Extremely confident'],
+    ['Poor', 'Fair', 'Good', 'Very Good', 'Excellent'],
+    ['Not well at all', 'Slightly well', 'Somewhat well', 'Quite well', 'Extremely well'],
+    ['Not at all', 'A little bit', 'Somewhat well', 'Quite well', 'Extremely well'],
+    Array.from({ length: 10 }, (_, index) => String(index + 1)),
+    ['Yes', 'No', "I don't know"],
+    ['Yes', 'Maybe', 'No'],
+    ['Very low extent', 'Low extent', 'Moderate extent', 'Great extent', 'Very great extent'],
+    ['Not informed at all', 'Slightly informed', 'Somewhat informed', 'Quite informed', 'Extremely informed'],
+    ['Not effective at all', 'Slightly effective', 'Somewhat effective', 'Quite effective', 'Extremely effective'],
+    ['No growth at all', 'Slight growth', 'Some growth', 'A lot of growth', 'Substantial growth', "I don't know"],
+    ['Never', 'Rarely', 'Occasionally', 'A moderate amount', 'A great deal'],
+    ['Strongly disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly agree', 'Not applicable'],
+    ['Not at all', 'Not really', 'Kind of', 'Definitely', 'Absolutely', "I didn't have any of these classes or activities"],
+    ['0-10%', '11-25%', '26-50%', '51-75%', '76-100%'],
+    ['I did not provide this support', '1 time during the program', '2-3 times during the program', 'Weekly', 'Daily'],
+    ['Not helpful', 'Somewhat helpful', 'Helpful', 'Very Helpful'],
+    ['Strongly disagree', 'Disagree', 'Neither agree nor disagree', 'Agree', 'Strongly agree'],
+    ['Not Challenging', 'Somewhat Challenging', 'Very Challenging'],
+    ['Selected', 'Not Selected'],
+    ['Community or local organizations', 'Education newsletter or email blast', 'Grant database or website', 'Professional network', 'Social media', 'Other [please specify]'],
+    ['Not at all', 'A little', 'Somewhat', 'Quite a bit', 'A great deal']
   ];
 
   const state = {
@@ -16,7 +45,9 @@
     rows: [],
     columns: [],
     charts: [],
-    nextChartNumber: 1
+    nextChartNumber: 1,
+    sources: [],
+    reportResult: null
   };
 
   const els = {
@@ -33,7 +64,29 @@
     addChartBtn: document.getElementById('addChartBtn'),
     emptyState: document.getElementById('emptyState'),
     chartTemplate: document.getElementById('chartCardTemplate'),
-    filterTemplate: document.getElementById('filterTemplate')
+    filterTemplate: document.getElementById('filterTemplate'),
+    reportSourceSelect: document.getElementById('reportSourceSelect'),
+    publicSheetUrl: document.getElementById('publicSheetUrl'),
+    loadPublicSheetBtn: document.getElementById('loadPublicSheetBtn'),
+    reportStatus: document.getElementById('reportStatus'),
+    configSheetSelect: document.getElementById('configSheetSelect'),
+    configRowSelect: document.getElementById('configRowSelect'),
+    reportNameInput: document.getElementById('reportNameInput'),
+    reportDataSheetSelect: document.getElementById('reportDataSheetSelect'),
+    questionSheetSelect: document.getElementById('questionSheetSelect'),
+    questionColumnSelect: document.getElementById('questionColumnSelect'),
+    displayColumnSelect: document.getElementById('displayColumnSelect'),
+    breakdownColumnSelect: document.getElementById('breakdownColumnSelect'),
+    siteSheetSelect: document.getElementById('siteSheetSelect'),
+    dataSiteColumnSelect: document.getElementById('dataSiteColumnSelect'),
+    siteKeyColumnSelect: document.getElementById('siteKeyColumnSelect'),
+    siteColumnSelect: document.getElementById('siteColumnSelect'),
+    generateReportBtn: document.getElementById('generateReportBtn'),
+    downloadReportCsvBtn: document.getElementById('downloadReportCsvBtn'),
+    downloadReportXlsxBtn: document.getElementById('downloadReportXlsxBtn'),
+    reportOutputTitle: document.getElementById('reportOutputTitle'),
+    reportOutputMeta: document.getElementById('reportOutputMeta'),
+    distributionOutput: document.getElementById('distributionOutput')
   };
 
   Chart.register(ChartDataLabels);
@@ -42,6 +95,16 @@
   els.fileInput.addEventListener('change', handleFileUpload);
   els.sheetSelect.addEventListener('change', () => loadSheet(els.sheetSelect.value));
   els.addChartBtn.addEventListener('click', () => addChart());
+  els.loadPublicSheetBtn.addEventListener('click', loadPublicGoogleSheet);
+  els.reportSourceSelect.addEventListener('change', renderReportControls);
+  els.configSheetSelect.addEventListener('change', renderConfigOptions);
+  els.configRowSelect.addEventListener('change', applySelectedConfig);
+  els.reportDataSheetSelect.addEventListener('change', renderReportColumns);
+  els.questionSheetSelect.addEventListener('change', renderQuestionColumns);
+  els.siteSheetSelect.addEventListener('change', renderSiteColumns);
+  els.generateReportBtn.addEventListener('click', generateDistributionReport);
+  els.downloadReportCsvBtn.addEventListener('click', downloadDistributionCsv);
+  els.downloadReportXlsxBtn.addEventListener('click', downloadDistributionXlsx);
 
   async function handleFileUpload(event) {
     const file = event.target.files[0];
@@ -70,6 +133,7 @@
 
       state.workbook = workbook;
       state.fileName = file.name;
+      upsertReportSource(UPLOADED_SOURCE_ID, `Uploaded: ${file.name}`, workbook);
       populateSheetSelector(workbook.SheetNames);
       loadSheet(workbook.SheetNames[0]);
 
@@ -145,6 +209,7 @@
     renderFileStats();
     renderPreview();
     renderAllCharts();
+    renderReportControls();
   }
 
   function renderFileStats() {
@@ -875,6 +940,377 @@
     downloadCsv(csvRows, `${safeFileName(chart.title)}-filtered-data.csv`);
   }
 
+  async function loadPublicGoogleSheet() {
+    const url = normalizeValue(els.publicSheetUrl.value);
+    const sheetId = extractGoogleSheetId(url);
+    if (!sheetId) {
+      showReportStatus('Paste a valid public Google Sheets link.', 'error');
+      return;
+    }
+
+    showReportStatus('Loading public Google Sheet...', '');
+    try {
+      const exportUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=xlsx`;
+      const response = await fetch(exportUrl);
+      if (!response.ok) throw new Error(`Google Sheets returned ${response.status}`);
+      const buffer = await response.arrayBuffer();
+      const workbook = XLSX.read(buffer, {
+        type: 'array',
+        cellDates: true,
+        raw: false
+      });
+      if (!workbook.SheetNames.length) throw new Error('No sheets found');
+      const sourceName = `Google Sheet: ${sheetId.slice(0, 8)}...`;
+      upsertReportSource(`google-${sheetId}`, sourceName, workbook);
+      els.reportSourceSelect.value = `google-${sheetId}`;
+      renderReportControls();
+      showReportStatus('Public Google Sheet loaded. It is used only in this browser session.', '');
+    } catch (error) {
+      console.error(error);
+      showReportStatus('Could not load that Google Sheet. Make sure it is public or shared with anyone who has the link.', 'error');
+    }
+  }
+
+  function upsertReportSource(id, name, workbook) {
+    const existing = state.sources.find(source => source.id === id);
+    if (existing) {
+      existing.name = name;
+      existing.workbook = workbook;
+    } else {
+      state.sources.push({ id, name, workbook });
+    }
+    state.reportResult = null;
+  }
+
+  function getSelectedReportSource() {
+    return state.sources.find(source => source.id === els.reportSourceSelect.value) || state.sources[0] || null;
+  }
+
+  function renderReportControls() {
+    const previousSource = els.reportSourceSelect.value;
+    els.reportSourceSelect.innerHTML = state.sources.length
+      ? state.sources.map(source => `<option value="${escapeAttr(source.id)}">${escapeHtml(source.name)}</option>`).join('')
+      : '<option value="">No source loaded</option>';
+
+    if (state.sources.some(source => source.id === previousSource)) {
+      els.reportSourceSelect.value = previousSource;
+    } else if (state.sources.length) {
+      els.reportSourceSelect.value = state.sources[0].id;
+    }
+
+    const source = getSelectedReportSource();
+    const disabled = !source;
+    [
+      els.configSheetSelect, els.configRowSelect, els.reportNameInput, els.reportDataSheetSelect,
+      els.questionSheetSelect, els.questionColumnSelect, els.displayColumnSelect, els.breakdownColumnSelect,
+      els.siteSheetSelect, els.dataSiteColumnSelect, els.siteKeyColumnSelect, els.siteColumnSelect,
+      els.generateReportBtn, els.downloadReportCsvBtn, els.downloadReportXlsxBtn
+    ].forEach(control => {
+      control.disabled = disabled;
+    });
+
+    if (!source) {
+      els.configSheetSelect.innerHTML = '<option value="">No sheets</option>';
+      els.reportDataSheetSelect.innerHTML = '<option value="">No sheets</option>';
+      els.questionSheetSelect.innerHTML = '<option value="">No sheets</option>';
+      els.siteSheetSelect.innerHTML = '<option value="">No site lookup</option>';
+      return;
+    }
+
+    const sheetNames = source.workbook.SheetNames;
+    populateSelect(els.configSheetSelect, sheetNames, pickSheet(sheetNames, /survey breakdown|generation|input|config/i), false);
+    populateSelect(els.reportDataSheetSelect, sheetNames, pickDataSheet(sheetNames), false);
+    populateSelect(els.questionSheetSelect, sheetNames, pickSheet(sheetNames, /question/i), false);
+    populateSelect(els.siteSheetSelect, sheetNames, pickSheet(sheetNames, /site|scs|synthesized/i), true, 'No site lookup');
+    renderConfigOptions();
+    renderReportColumns();
+    renderQuestionColumns();
+    renderSiteColumns();
+  }
+
+  function renderConfigOptions() {
+    const source = getSelectedReportSource();
+    if (!source || !els.configSheetSelect.value) {
+      els.configRowSelect.innerHTML = '<option value="">No config rows</option>';
+      return;
+    }
+
+    const configs = parseConfigRows(source.workbook, els.configSheetSelect.value);
+    els.configRowSelect.dataset.configs = JSON.stringify(configs);
+    els.configRowSelect.innerHTML = configs.length
+      ? ['<option value="">Choose a config row</option>', ...configs.map((config, index) => {
+        const label = `${config.survey || 'Unnamed survey'}${config.generate ? '' : ' (not marked TRUE)'}`;
+        return `<option value="${index}">${escapeHtml(label)}</option>`;
+      })].join('')
+      : '<option value="">No config rows found</option>';
+  }
+
+  function applySelectedConfig() {
+    const configs = JSON.parse(els.configRowSelect.dataset.configs || '[]');
+    const config = configs[Number(els.configRowSelect.value)];
+    if (!config) return;
+
+    els.reportNameInput.value = config.newSheetName || config.survey || 'Distribution';
+    selectMultipleValues(els.breakdownColumnSelect, config.disaggCols);
+    selectMultipleValues(els.siteColumnSelect, config.siteDisaggCols);
+    showReportStatus('Config row applied. Confirm the raw data and question list sheets, then generate the report.', '');
+  }
+
+  function renderReportColumns() {
+    const source = getSelectedReportSource();
+    const columns = source && els.reportDataSheetSelect.value
+      ? getSheetColumns(source.workbook, els.reportDataSheetSelect.value)
+      : [];
+    populateSelect(els.breakdownColumnSelect, columns, '', false);
+    populateSelect(els.dataSiteColumnSelect, columns, pickColumn(columns, /^site$/i), true, 'No site column');
+  }
+
+  function renderQuestionColumns() {
+    const source = getSelectedReportSource();
+    const columns = source && els.questionSheetSelect.value
+      ? getSheetColumns(source.workbook, els.questionSheetSelect.value)
+      : [];
+    populateSelect(els.questionColumnSelect, columns, pickColumn(columns, /question|survey/i), false);
+    populateSelect(els.displayColumnSelect, columns, pickColumn(columns, /display|text|label|name/i), true, 'Same as question column');
+  }
+
+  function renderSiteColumns() {
+    const source = getSelectedReportSource();
+    const columns = source && els.siteSheetSelect.value
+      ? getSheetColumns(source.workbook, els.siteSheetSelect.value)
+      : [];
+    populateSelect(els.siteKeyColumnSelect, columns, pickColumn(columns, /^site$|site name/i), true, 'No lookup key');
+    populateSelect(els.siteColumnSelect, columns.filter(column => !/^site$/i.test(column)), '', false);
+  }
+
+  function generateDistributionReport() {
+    const source = getSelectedReportSource();
+    if (!source) {
+      showReportStatus('Load or upload a source first.', 'error');
+      return;
+    }
+
+    try {
+      const dataRows = getSheetRecords(source.workbook, els.reportDataSheetSelect.value);
+      const questionRows = getSheetRecords(source.workbook, els.questionSheetSelect.value);
+      const questionColumn = els.questionColumnSelect.value;
+      const displayColumn = els.displayColumnSelect.value;
+      const reportName = normalizeValue(els.reportNameInput.value) || 'Distribution';
+      const selectedBreakdowns = getSelectedOptions(els.breakdownColumnSelect);
+      const selectedSiteColumns = getSelectedOptions(els.siteColumnSelect);
+      const mergedRows = mergeSiteColumns(dataRows, selectedSiteColumns);
+      const breakdownColumns = uniqueList([...selectedBreakdowns, ...selectedSiteColumns]).filter(column => column && column in (mergedRows[0] || {}));
+      const questions = questionRows
+        .map(row => ({
+          column: normalizeValue(row[questionColumn]),
+          display: displayColumn ? normalizeValue(row[displayColumn]) : ''
+        }))
+        .filter(question => question.column);
+
+      if (!mergedRows.length) throw new Error('The raw data sheet has no rows.');
+      if (!questions.length) throw new Error('The question list has no usable questions.');
+
+      const output = buildDistributionOutput(mergedRows, questions, breakdownColumns);
+      state.reportResult = {
+        title: reportName,
+        aoa: output.aoa,
+        rows: output.rows,
+        skipped: output.skipped,
+        questionCount: output.questionCount,
+        sourceName: source.name
+      };
+      renderDistributionOutput(state.reportResult);
+      showReportStatus('Distribution report generated.', '');
+    } catch (error) {
+      console.error(error);
+      showReportStatus(error.message || 'Could not generate the report.', 'error');
+    }
+  }
+
+  function mergeSiteColumns(dataRows, selectedSiteColumns) {
+    if (!selectedSiteColumns.length || !els.siteSheetSelect.value || !els.dataSiteColumnSelect.value || !els.siteKeyColumnSelect.value) {
+      return dataRows.map(row => ({ ...row }));
+    }
+
+    const source = getSelectedReportSource();
+    const siteRows = getSheetRecords(source.workbook, els.siteSheetSelect.value);
+    const dataSiteColumn = els.dataSiteColumnSelect.value;
+    const siteKeyColumn = els.siteKeyColumnSelect.value;
+    const lookup = new Map();
+
+    siteRows.forEach(row => {
+      const key = normalizeForMatch(row[siteKeyColumn]);
+      if (key && !lookup.has(key)) lookup.set(key, row);
+    });
+
+    return dataRows.map(row => {
+      const merged = { ...row };
+      const match = lookup.get(normalizeForMatch(row[dataSiteColumn]));
+      selectedSiteColumns.forEach(column => {
+        merged[column] = match ? match[column] : '';
+      });
+      return merged;
+    });
+  }
+
+  function buildDistributionOutput(dataRows, questions, breakdownColumns) {
+    const aoa = [];
+    const rows = [];
+    const skipped = [];
+    let questionCount = 0;
+
+    questions.forEach(question => {
+      if (!(question.column in (dataRows[0] || {}))) {
+        skipped.push(question.column);
+        return;
+      }
+      const section = buildQuestionSection(dataRows, question.display || question.column, question.column, breakdownColumns);
+      aoa.push(...section.aoa);
+      rows.push(...section.rows);
+      questionCount += 1;
+    });
+
+    return { aoa, rows, skipped, questionCount };
+  }
+
+  function buildQuestionSection(dataRows, displayName, questionColumn, breakdownColumns) {
+    const answers = sortReportAnswers(getReportUniqueValues(dataRows, questionColumn), questionColumn);
+    const combos = createBreakdownCombos(dataRows, breakdownColumns);
+    const headerRows = createReportHeaderRows(combos, breakdownColumns);
+    const width = Math.max(1, headerRows[0].length) + 1;
+    const aoa = [];
+    const rows = [];
+
+    const titleRow = Array(width).fill('');
+    titleRow[0] = displayName;
+    aoa.push(titleRow);
+    rows.push(titleRow.map((value, index) => ({ value, type: index === 0 ? 'question' : 'blank' })));
+
+    headerRows.forEach(row => {
+      const fullRow = ['', ...row];
+      aoa.push(fullRow);
+      rows.push(fullRow.map(value => ({ value, type: 'header' })));
+    });
+
+    answers.forEach(answer => {
+      const row = Array(width).fill('');
+      const renderedRow = Array(width).fill(null).map(() => ({ value: '', type: 'plain' }));
+      row[0] = answer;
+      renderedRow[0] = { value: answer, type: 'answer' };
+
+      combos.forEach((combo, comboIndex) => {
+        const filtered = dataRows.filter(dataRow => combo.conditions.every(condition => getReportValue(dataRow[condition.column]) === condition.value));
+        const counts = countAnswers(filtered, questionColumn);
+        const total = Array.from(counts.values()).reduce((sum, count) => sum + count, 0);
+        const count = counts.get(normalizeForMatch(answer)) || 0;
+        const percent = total ? count / total : 0;
+        const countIndex = 1 + (comboIndex * 2);
+        row[countIndex] = count;
+        row[countIndex + 1] = percent;
+        renderedRow[countIndex] = { value: count, type: 'count' };
+        renderedRow[countIndex + 1] = { value: percent, type: 'percent' };
+      });
+
+      aoa.push(row);
+      rows.push(renderedRow);
+    });
+
+    const spacer = Array(width).fill('');
+    aoa.push(spacer);
+    rows.push(spacer.map(value => ({ value, type: 'spacer' })));
+    return { aoa, rows };
+  }
+
+  function createReportHeaderRows(combos, breakdownColumns) {
+    if (!breakdownColumns.length) return [['Count', 'Percentage']];
+
+    const rows = breakdownColumns.map(column => {
+      const row = [];
+      combos.forEach(combo => {
+        const value = combo.conditions.find(condition => condition.column === column)?.value || '';
+        row.push(value, '');
+      });
+      return row;
+    });
+    rows.push(combos.flatMap(() => ['Count', 'Percentage']));
+    return rows;
+  }
+
+  function createBreakdownCombos(dataRows, breakdownColumns) {
+    if (!breakdownColumns.length) return [{ label: 'All rows', conditions: [] }];
+    const valuesByColumn = breakdownColumns.map(column => ({
+      column,
+      values: getReportUniqueValues(dataRows, column)
+    })).filter(item => item.values.length);
+
+    if (!valuesByColumn.length) return [{ label: 'All rows', conditions: [] }];
+
+    return cartesianProduct(valuesByColumn.map(item => item.values)).map(values => ({
+      label: values.join(' / '),
+      conditions: values.map((value, index) => ({ column: valuesByColumn[index].column, value }))
+    }));
+  }
+
+  function countAnswers(rows, questionColumn) {
+    const counts = new Map();
+    rows.forEach(row => {
+      const value = getReportValue(row[questionColumn]);
+      if (!value) return;
+      const key = normalizeForMatch(value);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return counts;
+  }
+
+  function renderDistributionOutput(result) {
+    els.reportOutputTitle.textContent = result.title;
+    const skippedText = result.skipped.length ? `, skipped ${result.skipped.length} missing questions` : '';
+    els.reportOutputMeta.textContent = `${result.questionCount} questions from ${result.sourceName}${skippedText}`;
+    els.distributionOutput.innerHTML = `
+      <table>
+        <tbody>
+          ${result.rows.map(row => {
+            const spacer = row.every(cell => cell.type === 'spacer' || normalizeValue(cell.value) === '');
+            return `<tr class="${spacer ? 'report-spacer' : ''}">
+              ${row.map(cell => renderReportCell(cell)).join('')}
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function renderReportCell(cell) {
+    if (cell.type === 'spacer') return '<td></td>';
+    if (cell.type === 'question') return `<td class="question-title">${escapeHtml(cell.value)}</td>`;
+    if (cell.type === 'header') return `<td class="report-header">${escapeHtml(cell.value)}</td>`;
+    if (cell.type === 'count') return `<td class="number">${formatNumber(cell.value)}</td>`;
+    if (cell.type === 'percent') {
+      const percent = Number(cell.value) || 0;
+      return `<td class="number heat-cell" style="background:${getHeatColor(percent)}">${formatPercent(percent)}</td>`;
+    }
+    return `<td>${escapeHtml(cell.value)}</td>`;
+  }
+
+  function downloadDistributionCsv() {
+    if (!state.reportResult) {
+      alert('Generate a distribution report first.');
+      return;
+    }
+    downloadCsv(state.reportResult.aoa.map(row => row.map(value => typeof value === 'number' ? value : displayCell(value))), `${safeFileName(state.reportResult.title)}.csv`);
+  }
+
+  function downloadDistributionXlsx() {
+    if (!state.reportResult) {
+      alert('Generate a distribution report first.');
+      return;
+    }
+    const workbook = XLSX.utils.book_new();
+    const sheet = XLSX.utils.aoa_to_sheet(state.reportResult.aoa);
+    XLSX.utils.book_append_sheet(workbook, sheet, safeSheetName(state.reportResult.title));
+    XLSX.writeFile(workbook, `${safeFileName(state.reportResult.title)}.xlsx`);
+  }
+
   function downloadCsv(rows, fileName) {
     const csv = rows.map(row => row.map(csvEscape).join(',')).join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -890,6 +1326,204 @@
     return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   }
 
+  function populateSelect(select, values, selectedValue, includeNone, noneLabel = 'None') {
+    const previous = select.value;
+    const options = includeNone ? [`<option value="">${escapeHtml(noneLabel)}</option>`] : [];
+    options.push(...values.map(value => `<option value="${escapeAttr(value)}">${escapeHtml(value)}</option>`));
+    select.innerHTML = options.join('');
+
+    if (selectedValue && values.includes(selectedValue)) select.value = selectedValue;
+    else if (previous && (values.includes(previous) || (includeNone && previous === ''))) select.value = previous;
+    else if (includeNone) select.value = '';
+    else if (values.length) select.value = values[0];
+  }
+
+  function pickSheet(sheetNames, pattern) {
+    return sheetNames.find(name => pattern.test(name)) || sheetNames[0] || '';
+  }
+
+  function pickDataSheet(sheetNames) {
+    return sheetNames.find(name => !/question|config|input|generation|site|scs|lookup|mapping/i.test(name)) || sheetNames[0] || '';
+  }
+
+  function pickColumn(columns, pattern) {
+    return columns.find(column => pattern.test(column)) || columns[0] || '';
+  }
+
+  function getSheetColumns(workbook, sheetName) {
+    const rows = getSheetMatrix(workbook, sheetName);
+    const headerRow = findHeaderRow(rows);
+    return rows[headerRow] ? makeUniqueHeaders(rows[headerRow]) : [];
+  }
+
+  function getSheetRecords(workbook, sheetName) {
+    const rows = getSheetMatrix(workbook, sheetName);
+    const headerRow = findHeaderRow(rows);
+    const headers = rows[headerRow] ? makeUniqueHeaders(rows[headerRow]) : [];
+    return rows.slice(headerRow + 1)
+      .filter(row => row.some(cell => normalizeValue(cell) !== ''))
+      .map(row => {
+        const record = {};
+        headers.forEach((header, index) => {
+          record[header] = row[index] === undefined ? '' : row[index];
+        });
+        return record;
+      });
+  }
+
+  function getSheetMatrix(workbook, sheetName) {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) return [];
+    return XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      defval: '',
+      blankrows: false
+    }).filter(row => row.some(cell => normalizeValue(cell) !== ''));
+  }
+
+  function findHeaderRow(rows) {
+    if (!rows.length) return 0;
+    const surveyHeaderIndex = rows.slice(0, 6).findIndex(row => row.some(cell => /^survey$/i.test(normalizeValue(cell))));
+    if (surveyHeaderIndex >= 0) return surveyHeaderIndex;
+    return 0;
+  }
+
+  function parseConfigRows(workbook, sheetName) {
+    const rows = getSheetMatrix(workbook, sheetName);
+    if (!rows.length) return [];
+    const headerIndex = rows.slice(0, 8).findIndex(row => row.some(cell => /^survey$/i.test(normalizeValue(cell))));
+    const headers = rows[headerIndex >= 0 ? headerIndex : 0].map(normalizeValue);
+    const dataRows = rows.slice((headerIndex >= 0 ? headerIndex : 0) + 1);
+    const surveyIndex = findHeaderIndex(headers, /^survey$/i, 0);
+    const generateIndex = findHeaderIndex(headers, /generate/i, 2);
+    const newSheetIndex = findHeaderIndex(headers, /new.*sheet|sheet.*name|output/i, 3);
+    const disaggIndices = findConfigColumnIndices(headers, /disagg|breakdown|break down/i, [5, 6, 7], false);
+    const siteIndices = findConfigColumnIndices(headers, /site.*(disagg|breakdown|characteristic|column)|site-level|site level/i, [9, 10, 11], true);
+
+    return dataRows.map(row => {
+      const survey = normalizeValue(row[surveyIndex]);
+      if (!survey) return null;
+      return {
+        survey,
+        generate: normalizeValue(row[generateIndex]).toUpperCase() === 'TRUE',
+        newSheetName: normalizeValue(row[newSheetIndex]),
+        disaggCols: disaggIndices.map(index => normalizeValue(row[index])).filter(Boolean),
+        siteDisaggCols: siteIndices.map(index => normalizeValue(row[index])).filter(Boolean)
+      };
+    }).filter(Boolean);
+  }
+
+  function findHeaderIndex(headers, pattern, fallback) {
+    const found = headers.findIndex(header => pattern.test(header));
+    return found >= 0 ? found : fallback;
+  }
+
+  function findConfigColumnIndices(headers, pattern, fallbackIndices, requireSite) {
+    const matches = headers
+      .map((header, index) => ({ header, index }))
+      .filter(item => pattern.test(item.header) && (!requireSite || /site/i.test(item.header)))
+      .map(item => item.index);
+    return matches.length ? matches : fallbackIndices;
+  }
+
+  function selectMultipleValues(select, values) {
+    const selected = new Set(values.map(normalizeValue));
+    Array.from(select.options).forEach(option => {
+      option.selected = selected.has(option.value);
+    });
+  }
+
+  function getSelectedOptions(select) {
+    return Array.from(select.selectedOptions).map(option => option.value).filter(Boolean);
+  }
+
+  function getReportUniqueValues(rows, column) {
+    const seen = new Set();
+    const values = [];
+    rows.forEach(row => {
+      const value = getReportValue(row[column]);
+      if (!value || seen.has(value)) return;
+      seen.add(value);
+      values.push(value);
+    });
+    return values;
+  }
+
+  function getReportValue(value) {
+    const normalized = normalizeValue(value);
+    return normalized === NO_RESPONSE ? '' : normalized;
+  }
+
+  function sortReportAnswers(values, questionText) {
+    const observed = values.filter(Boolean);
+    const normalizedObserved = new Set(observed.map(normalizeForMatch));
+    const hardSet = getHardCodedAnswerSet(questionText);
+    if (hardSet) return hardSet;
+
+    const matchingSet = ANSWER_SETS.find(set => {
+      const normalizedSet = new Set(set.map(normalizeForMatch));
+      return Array.from(normalizedObserved).every(value => normalizedSet.has(value));
+    });
+
+    if (matchingSet) return matchingSet;
+    return [...observed].sort((a, b) => a.localeCompare(b));
+  }
+
+  function getHardCodedAnswerSet(questionText) {
+    if (/How frequently did you engage with your students.*families this summer/i.test(questionText)) {
+      return ['Never', 'Rarely', 'Occasionally', 'A moderate amount', 'A great deal'];
+    }
+    if (/To what extent did your child\/children enjoy participating/i.test(questionText)) {
+      return ['Not at all', 'A little bit', 'Somewhat well', 'Quite well', 'Extremely well'];
+    }
+    if (/If given the opportunity, would you return/i.test(questionText)) {
+      return ['Yes', 'Maybe', 'No'];
+    }
+    return null;
+  }
+
+  function cartesianProduct(arrays) {
+    return arrays.reduce((acc, values) => acc.flatMap(prefix => values.map(value => [...prefix, value])), [[]]);
+  }
+
+  function uniqueList(values) {
+    return Array.from(new Set(values));
+  }
+
+  function normalizeForMatch(value) {
+    return normalizeValue(value)
+      .toLowerCase()
+      .replace(/[’‘]/g, "'")
+      .replace(/[“”]/g, '"')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function getHeatColor(percent) {
+    const value = Math.max(0, Math.min(1, Number(percent) || 0));
+    const lightness = 97 - (value * 35);
+    const saturation = 58 + (value * 16);
+    return `hsl(151, ${saturation}%, ${lightness}%)`;
+  }
+
+  function formatPercent(value) {
+    return `${roundOne((Number(value) || 0) * 100)}%`;
+  }
+
+  function extractGoogleSheetId(url) {
+    const match = normalizeValue(url).match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    return match ? match[1] : '';
+  }
+
+  function safeSheetName(value) {
+    return (normalizeValue(value).replace(/[\\/?*:[\]]+/g, ' ').trim() || 'Distribution').slice(0, 31);
+  }
+
+  function showReportStatus(message, type) {
+    els.reportStatus.textContent = message;
+    els.reportStatus.className = `status-message ${type || ''}`.trim();
+  }
+
   function resetDataset() {
     state.workbook = null;
     state.fileName = '';
@@ -901,9 +1535,14 @@
     });
     state.charts = [];
     state.nextChartNumber = 1;
+    state.sources = state.sources.filter(source => source.id !== UPLOADED_SOURCE_ID);
+    state.reportResult = null;
     els.chartGrid.innerHTML = '';
     els.fileStats.innerHTML = '';
     els.previewTable.innerHTML = '';
+    els.reportOutputTitle.textContent = 'No report generated yet';
+    els.reportOutputMeta.textContent = 'Select a source and generate a report.';
+    els.distributionOutput.innerHTML = '<div class="report-empty">Upload a workbook or load a public Google Sheet, then choose the input settings.</div>';
     renderDataset();
   }
 

@@ -62,6 +62,103 @@
       <div id="chartGrid" class="chart-grid"></div>
     </section>
 
+    <section id="distributionSection" class="distribution-section" aria-labelledby="distribution-title">
+      <div class="section-heading dashboard-heading">
+        <div>
+          <h2 id="distribution-title">Distribution Report</h2>
+          <p>Generate a sheet-style output table with counts, percentages, breakdowns, and heat-map coloring.</p>
+        </div>
+      </div>
+
+      <div class="report-source-panel">
+        <div class="source-grid">
+          <label class="field">
+            <span>Report source</span>
+            <select id="reportSourceSelect"></select>
+          </label>
+          <label class="field public-url-field">
+            <span>Public Google Sheet link</span>
+            <input id="publicSheetUrl" type="url" placeholder="Paste a public Google Sheets URL">
+          </label>
+          <button id="loadPublicSheetBtn" class="secondary-btn" type="button" title="Load a public Google Sheet">Load public sheet</button>
+        </div>
+        <div id="reportStatus" class="status-message" role="status" aria-live="polite"></div>
+      </div>
+
+      <div class="report-builder">
+        <aside class="report-settings-panel">
+          <label class="field">
+            <span>Input/config sheet</span>
+            <select id="configSheetSelect"></select>
+          </label>
+          <label class="field">
+            <span>Config row to use</span>
+            <select id="configRowSelect"></select>
+          </label>
+          <label class="field">
+            <span>Output report name</span>
+            <input id="reportNameInput" type="text" placeholder="Distribution">
+          </label>
+          <label class="field">
+            <span>Raw data sheet</span>
+            <select id="reportDataSheetSelect"></select>
+          </label>
+          <label class="field">
+            <span>Question list sheet</span>
+            <select id="questionSheetSelect"></select>
+          </label>
+          <div class="two-col-fields">
+            <label class="field">
+              <span>Question column</span>
+              <select id="questionColumnSelect"></select>
+            </label>
+            <label class="field">
+              <span>Display name column</span>
+              <select id="displayColumnSelect"></select>
+            </label>
+          </div>
+          <label class="field">
+            <span>Break down by</span>
+            <select id="breakdownColumnSelect" multiple size="5"></select>
+          </label>
+          <div class="report-divider"></div>
+          <label class="field">
+            <span>Site lookup sheet</span>
+            <select id="siteSheetSelect"></select>
+          </label>
+          <div class="two-col-fields">
+            <label class="field">
+              <span>Data site column</span>
+              <select id="dataSiteColumnSelect"></select>
+            </label>
+            <label class="field">
+              <span>Lookup site column</span>
+              <select id="siteKeyColumnSelect"></select>
+            </label>
+          </div>
+          <label class="field">
+            <span>Site-level columns to add</span>
+            <select id="siteColumnSelect" multiple size="4"></select>
+          </label>
+          <div class="button-row report-actions">
+            <button id="generateReportBtn" class="primary-btn" type="button" title="Generate distribution report">Generate report</button>
+            <button id="downloadReportCsvBtn" class="secondary-btn" type="button" title="Download report as CSV">Download CSV</button>
+            <button id="downloadReportXlsxBtn" class="secondary-btn" type="button" title="Download report as Excel">Download Excel</button>
+          </div>
+        </aside>
+
+        <div class="report-output-panel">
+          <div class="report-summary-bar">
+            <strong id="reportOutputTitle">No report generated yet</strong>
+            <span id="reportOutputMeta">Select a source and generate a report.</span>
+          </div>
+          <div id="distributionOutput" class="table-wrap distribution-output">
+            <div class="report-empty">Upload a workbook or load a public Google Sheet, then choose the input settings.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section id="emptyState" class="empty-state">
       <h2>No file uploaded yet</h2>
       <p>Upload a spreadsheet to preview the rows and start building charts.</p>
