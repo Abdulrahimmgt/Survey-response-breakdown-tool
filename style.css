@@ -636,9 +636,14 @@ th.number {
   background: var(--panel-soft);
 }
 
-.checklist-box input {
+.checklist-box input[type="checkbox"] {
   flex: 0 0 auto;
+  width: 16px;
+  min-height: auto;
+  height: 16px;
   margin-top: 2px;
+  padding: 0;
+  accent-color: var(--accent);
 }
 
 .checklist-empty {

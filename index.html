@@ -88,14 +88,6 @@
       <div class="report-builder">
         <aside class="report-settings-panel">
           <label class="field">
-            <span>Input/config sheet</span>
-            <select id="configSheetSelect"></select>
-          </label>
-          <div class="field">
-            <span>Surveys from config</span>
-            <div id="configSurveyChecklist" class="checklist-box"></div>
-          </div>
-          <label class="field">
             <span>Output report name</span>
             <input id="reportNameInput" type="text" placeholder="Distribution">
           </label>
@@ -103,46 +95,19 @@
             <span>Raw data sheet</span>
             <select id="reportDataSheetSelect"></select>
           </label>
-          <label class="field">
-            <span>Question list sheet</span>
-            <select id="questionSheetSelect"></select>
-          </label>
-          <div class="two-col-fields">
-            <label class="field">
-              <span>Question column</span>
-              <select id="questionColumnSelect"></select>
-            </label>
-            <label class="field">
-              <span>Display name column</span>
-              <select id="displayColumnSelect"></select>
-            </label>
-          </div>
           <div class="field">
-            <span>Questions to include</span>
+            <span>Response columns to include</span>
             <div id="questionChecklist" class="checklist-box tall"></div>
           </div>
-          <div class="field">
-            <span>Break down by</span>
-            <div id="breakdownChecklist" class="checklist-box"></div>
-          </div>
-          <div class="report-divider"></div>
-          <label class="field">
-            <span>Site lookup sheet</span>
-            <select id="siteSheetSelect"></select>
-          </label>
           <div class="two-col-fields">
             <label class="field">
-              <span>Data site column</span>
-              <select id="dataSiteColumnSelect"></select>
+              <span>Break down by responses in</span>
+              <select id="primaryBreakdownSelect"></select>
             </label>
             <label class="field">
-              <span>Lookup site column</span>
-              <select id="siteKeyColumnSelect"></select>
+              <span>Then also break down by</span>
+              <select id="secondaryBreakdownSelect"></select>
             </label>
-          </div>
-          <div class="field">
-            <span>Site-level columns to add</span>
-            <div id="siteChecklist" class="checklist-box"></div>
           </div>
           <div class="button-row report-actions">
             <button id="generateReportBtn" class="primary-btn" type="button" title="Generate distribution report">Generate report</button>

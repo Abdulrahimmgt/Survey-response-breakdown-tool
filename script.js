@@ -69,19 +69,11 @@
     publicSheetUrl: document.getElementById('publicSheetUrl'),
     loadPublicSheetBtn: document.getElementById('loadPublicSheetBtn'),
     reportStatus: document.getElementById('reportStatus'),
-    configSheetSelect: document.getElementById('configSheetSelect'),
-    configSurveyChecklist: document.getElementById('configSurveyChecklist'),
     reportNameInput: document.getElementById('reportNameInput'),
     reportDataSheetSelect: document.getElementById('reportDataSheetSelect'),
-    questionSheetSelect: document.getElementById('questionSheetSelect'),
-    questionColumnSelect: document.getElementById('questionColumnSelect'),
-    displayColumnSelect: document.getElementById('displayColumnSelect'),
     questionChecklist: document.getElementById('questionChecklist'),
-    breakdownChecklist: document.getElementById('breakdownChecklist'),
-    siteSheetSelect: document.getElementById('siteSheetSelect'),
-    dataSiteColumnSelect: document.getElementById('dataSiteColumnSelect'),
-    siteKeyColumnSelect: document.getElementById('siteKeyColumnSelect'),
-    siteChecklist: document.getElementById('siteChecklist'),
+    primaryBreakdownSelect: document.getElementById('primaryBreakdownSelect'),
+    secondaryBreakdownSelect: document.getElementById('secondaryBreakdownSelect'),
     generateReportBtn: document.getElementById('generateReportBtn'),
     downloadReportCsvBtn: document.getElementById('downloadReportCsvBtn'),
     downloadReportXlsxBtn: document.getElementById('downloadReportXlsxBtn'),
@@ -98,12 +90,7 @@
   els.addChartBtn.addEventListener('click', () => addChart());
   els.loadPublicSheetBtn.addEventListener('click', loadPublicGoogleSheet);
   els.reportSourceSelect.addEventListener('change', renderReportControls);
-  els.configSheetSelect.addEventListener('change', renderConfigOptions);
   els.reportDataSheetSelect.addEventListener('change', renderReportColumns);
-  els.questionSheetSelect.addEventListener('change', renderQuestionColumns);
-  els.questionColumnSelect.addEventListener('change', renderQuestionChecklist);
-  els.displayColumnSelect.addEventListener('change', renderQuestionChecklist);
-  els.siteSheetSelect.addEventListener('change', renderSiteColumns);
   els.generateReportBtn.addEventListener('click', generateDistributionReport);
   els.downloadReportCsvBtn.addEventListener('click', downloadDistributionCsv);
   els.downloadReportXlsxBtn.addEventListener('click', downloadDistributionXlsx);
@@ -1003,68 +990,25 @@
     const source = getSelectedReportSource();
     const disabled = !source;
     [
-      els.configSheetSelect, els.reportNameInput, els.reportDataSheetSelect,
-      els.questionSheetSelect, els.questionColumnSelect, els.displayColumnSelect,
-      els.siteSheetSelect, els.dataSiteColumnSelect, els.siteKeyColumnSelect,
+      els.reportNameInput, els.reportDataSheetSelect,
+      els.primaryBreakdownSelect, els.secondaryBreakdownSelect,
       els.generateReportBtn, els.downloadReportCsvBtn, els.downloadReportXlsxBtn
     ].forEach(control => {
       control.disabled = disabled;
     });
 
     if (!source) {
-      els.configSheetSelect.innerHTML = '<option value="">No sheets</option>';
       els.reportDataSheetSelect.innerHTML = '<option value="">No sheets</option>';
-      els.questionSheetSelect.innerHTML = '<option value="">No sheets</option>';
-      els.siteSheetSelect.innerHTML = '<option value="">No site lookup</option>';
-      renderCheckboxList(els.configSurveyChecklist, [], { emptyText: 'No surveys found' });
-      renderCheckboxList(els.questionChecklist, [], { emptyText: 'No question columns found' });
-      renderCheckboxList(els.breakdownChecklist, [], { emptyText: 'No breakdown columns found' });
-      renderCheckboxList(els.siteChecklist, [], { emptyText: 'No site columns found' });
+      els.primaryBreakdownSelect.innerHTML = '<option value="">No breakdown</option>';
+      els.secondaryBreakdownSelect.innerHTML = '<option value="">No extra breakdown</option>';
+      renderCheckboxList(els.questionChecklist, [], { emptyText: 'No response columns found' });
       return;
     }
 
     const sheetNames = source.workbook.SheetNames;
-    populateSelect(els.configSheetSelect, sheetNames, pickSheet(sheetNames, /survey breakdown|generation|input|config/i), false);
     populateSelect(els.reportDataSheetSelect, sheetNames, pickDataSheet(sheetNames), false);
-    populateSelect(els.questionSheetSelect, sheetNames, pickSheet(sheetNames, /question/i), false);
-    populateSelect(els.siteSheetSelect, sheetNames, pickSheet(sheetNames, /site|scs|synthesized/i), true, 'No site lookup');
-    renderConfigOptions();
+    if (!normalizeValue(els.reportNameInput.value)) els.reportNameInput.value = 'Distribution';
     renderReportColumns();
-    renderQuestionColumns();
-    renderSiteColumns();
-    syncChecklistDefaultsFromConfig();
-  }
-
-  function renderConfigOptions() {
-    const source = getSelectedReportSource();
-    if (!source || !els.configSheetSelect.value) {
-      renderCheckboxList(els.configSurveyChecklist, [], { emptyText: 'No surveys found' });
-      return;
-    }
-
-    const configs = parseConfigRows(source.workbook, els.configSheetSelect.value);
-    const defaultChecked = configs.some(config => config.generate)
-      ? configs.filter(config => config.generate).map(config => config.survey)
-      : configs.map(config => config.survey);
-    renderCheckboxList(
-      els.configSurveyChecklist,
-      configs.map(config => ({
-        value: config.survey,
-        label: `${config.survey}${config.generate ? '' : ' (not marked TRUE)'}`,
-        meta: config
-      })),
-      {
-        checkedValues: defaultChecked,
-        emptyText: 'No survey rows found',
-        onChange: syncChecklistDefaultsFromConfig
-      }
-    );
-    els.configSurveyChecklist.dataset.configs = JSON.stringify(configs);
-    const firstChecked = configs.find(config => defaultChecked.includes(config.survey));
-    if (firstChecked && !normalizeValue(els.reportNameInput.value)) {
-      els.reportNameInput.value = firstChecked.newSheetName || firstChecked.survey || 'Distribution';
-    }
-    syncChecklistDefaultsFromConfig();
   }
 
   function renderReportColumns() {
@@ -1072,59 +1016,14 @@
     const columns = source && els.reportDataSheetSelect.value
       ? getSheetColumns(source.workbook, els.reportDataSheetSelect.value)
       : [];
-    renderCheckboxList(els.breakdownChecklist, columns.map(column => ({ value: column, label: column })), {
-      checkedValues: [],
-      emptyText: 'No columns found'
+    const responseColumns = columns.filter(column => !isLikelyMetadataColumn(column));
+    const defaultResponseColumns = responseColumns.length ? responseColumns : columns;
+    renderCheckboxList(els.questionChecklist, columns.map(column => ({ value: column, label: column })), {
+      checkedValues: defaultResponseColumns,
+      emptyText: 'No response columns found'
     });
-    populateSelect(els.dataSiteColumnSelect, columns, pickColumn(columns, /^site$/i), true, 'No site column');
-    syncChecklistDefaultsFromConfig();
-  }
-
-  function renderQuestionColumns() {
-    const source = getSelectedReportSource();
-    const columns = source && els.questionSheetSelect.value
-      ? getSheetColumns(source.workbook, els.questionSheetSelect.value)
-      : [];
-    populateSelect(els.questionColumnSelect, columns, pickColumn(columns, /question|survey/i), false);
-    populateSelect(els.displayColumnSelect, columns, pickColumn(columns, /display|text|label|name/i), true, 'Same as question column');
-    renderQuestionChecklist();
-  }
-
-  function renderQuestionChecklist() {
-    const source = getSelectedReportSource();
-    if (!source || !els.questionSheetSelect.value || !els.questionColumnSelect.value) {
-      renderCheckboxList(els.questionChecklist, [], { emptyText: 'No question columns found' });
-      return;
-    }
-
-    const questionRows = getSheetRecords(source.workbook, els.questionSheetSelect.value);
-    const questionColumn = els.questionColumnSelect.value;
-    const displayColumn = els.displayColumnSelect.value;
-    const questions = questionRows
-      .map(row => {
-        const value = normalizeValue(row[questionColumn]);
-        const display = displayColumn ? normalizeValue(row[displayColumn]) : '';
-        return value ? { value, label: display || value, display } : null;
-      })
-      .filter(Boolean);
-
-    renderCheckboxList(els.questionChecklist, questions, {
-      checkedValues: questions.map(question => question.value),
-      emptyText: 'No question rows found'
-    });
-  }
-
-  function renderSiteColumns() {
-    const source = getSelectedReportSource();
-    const columns = source && els.siteSheetSelect.value
-      ? getSheetColumns(source.workbook, els.siteSheetSelect.value)
-      : [];
-    populateSelect(els.siteKeyColumnSelect, columns, pickColumn(columns, /^site$|site name/i), true, 'No lookup key');
-    renderCheckboxList(els.siteChecklist, columns.filter(column => !/^site$/i.test(column)).map(column => ({ value: column, label: column })), {
-      checkedValues: [],
-      emptyText: 'No site columns found'
-    });
-    syncChecklistDefaultsFromConfig();
+    populateSelect(els.primaryBreakdownSelect, columns, pickColumn(columns, /frequency|program|type|group|category|site|survey|test_name/i), true, 'No main breakdown');
+    populateSelect(els.secondaryBreakdownSelect, columns, pickColumn(columns, /test_name|pre|post|survey/i), true, 'No extra breakdown');
   }
 
   function generateDistributionReport() {
@@ -1137,19 +1036,19 @@
     try {
       const dataRows = getSheetRecords(source.workbook, els.reportDataSheetSelect.value);
       const reportName = normalizeValue(els.reportNameInput.value) || 'Distribution';
-      const selectedBreakdowns = getCheckedValues(els.breakdownChecklist);
-      const selectedSiteColumns = getCheckedValues(els.siteChecklist);
-      const mergedRows = mergeSiteColumns(dataRows, selectedSiteColumns);
-      const breakdownColumns = uniqueList([...selectedBreakdowns, ...selectedSiteColumns]).filter(column => column && column in (mergedRows[0] || {}));
+      const breakdownColumns = uniqueList([
+        els.primaryBreakdownSelect.value,
+        els.secondaryBreakdownSelect.value
+      ]).filter(column => column && column in (dataRows[0] || {}));
       const questions = getCheckedItems(els.questionChecklist).map(item => ({
         column: item.value,
         display: item.label
       }));
 
-      if (!mergedRows.length) throw new Error('The raw data sheet has no rows.');
-      if (!questions.length) throw new Error('Select at least one question column to include.');
+      if (!dataRows.length) throw new Error('The raw data sheet has no rows.');
+      if (!questions.length) throw new Error('Select at least one response column to include.');
 
-      const output = buildDistributionOutput(mergedRows, questions, breakdownColumns);
+      const output = buildDistributionOutput(dataRows, questions, breakdownColumns);
       state.reportResult = {
         title: reportName,
         aoa: output.aoa,
@@ -1164,32 +1063,6 @@
       console.error(error);
       showReportStatus(error.message || 'Could not generate the report.', 'error');
     }
-  }
-
-  function mergeSiteColumns(dataRows, selectedSiteColumns) {
-    if (!selectedSiteColumns.length || !els.siteSheetSelect.value || !els.dataSiteColumnSelect.value || !els.siteKeyColumnSelect.value) {
-      return dataRows.map(row => ({ ...row }));
-    }
-
-    const source = getSelectedReportSource();
-    const siteRows = getSheetRecords(source.workbook, els.siteSheetSelect.value);
-    const dataSiteColumn = els.dataSiteColumnSelect.value;
-    const siteKeyColumn = els.siteKeyColumnSelect.value;
-    const lookup = new Map();
-
-    siteRows.forEach(row => {
-      const key = normalizeForMatch(row[siteKeyColumn]);
-      if (key && !lookup.has(key)) lookup.set(key, row);
-    });
-
-    return dataRows.map(row => {
-      const merged = { ...row };
-      const match = lookup.get(normalizeForMatch(row[dataSiteColumn]));
-      selectedSiteColumns.forEach(column => {
-        merged[column] = match ? match[column] : '';
-      });
-      return merged;
-    });
   }
 
   function buildDistributionOutput(dataRows, questions, breakdownColumns) {
@@ -1303,8 +1176,8 @@
 
   function renderDistributionOutput(result) {
     els.reportOutputTitle.textContent = result.title;
-    const skippedText = result.skipped.length ? `, skipped ${result.skipped.length} missing questions` : '';
-    els.reportOutputMeta.textContent = `${result.questionCount} questions from ${result.sourceName}${skippedText}`;
+    const skippedText = result.skipped.length ? `, skipped ${result.skipped.length} missing columns` : '';
+    els.reportOutputMeta.textContent = `${result.questionCount} response columns from ${result.sourceName}${skippedText}`;
     els.distributionOutput.innerHTML = `
       <table>
         <tbody>
@@ -1389,6 +1262,11 @@
     return columns.find(column => pattern.test(column)) || columns[0] || '';
   }
 
+  function isLikelyMetadataColumn(column) {
+    return /^(id|student id|response id|tempid)$/i.test(column)
+      || /date|timestamp|email|name|phone|address/i.test(column);
+  }
+
   function getSheetColumns(workbook, sheetName) {
     const rows = getSheetMatrix(workbook, sheetName);
     const headerRow = findHeaderRow(rows);
@@ -1427,44 +1305,6 @@
     return 0;
   }
 
-  function parseConfigRows(workbook, sheetName) {
-    const rows = getSheetMatrix(workbook, sheetName);
-    if (!rows.length) return [];
-    const headerIndex = rows.slice(0, 8).findIndex(row => row.some(cell => /^survey$/i.test(normalizeValue(cell))));
-    const headers = rows[headerIndex >= 0 ? headerIndex : 0].map(normalizeValue);
-    const dataRows = rows.slice((headerIndex >= 0 ? headerIndex : 0) + 1);
-    const surveyIndex = findHeaderIndex(headers, /^survey$/i, 0);
-    const generateIndex = findHeaderIndex(headers, /generate/i, 2);
-    const newSheetIndex = findHeaderIndex(headers, /new.*sheet|sheet.*name|output/i, 3);
-    const disaggIndices = findConfigColumnIndices(headers, /disagg|breakdown|break down/i, [5, 6, 7], false);
-    const siteIndices = findConfigColumnIndices(headers, /site.*(disagg|breakdown|characteristic|column)|site-level|site level/i, [9, 10, 11], true);
-
-    return dataRows.map(row => {
-      const survey = normalizeValue(row[surveyIndex]);
-      if (!survey) return null;
-      return {
-        survey,
-        generate: normalizeValue(row[generateIndex]).toUpperCase() === 'TRUE',
-        newSheetName: normalizeValue(row[newSheetIndex]),
-        disaggCols: disaggIndices.map(index => normalizeValue(row[index])).filter(Boolean),
-        siteDisaggCols: siteIndices.map(index => normalizeValue(row[index])).filter(Boolean)
-      };
-    }).filter(Boolean);
-  }
-
-  function findHeaderIndex(headers, pattern, fallback) {
-    const found = headers.findIndex(header => pattern.test(header));
-    return found >= 0 ? found : fallback;
-  }
-
-  function findConfigColumnIndices(headers, pattern, fallbackIndices, requireSite) {
-    const matches = headers
-      .map((header, index) => ({ header, index }))
-      .filter(item => pattern.test(item.header) && (!requireSite || /site/i.test(item.header)))
-      .map(item => item.index);
-    return matches.length ? matches : fallbackIndices;
-  }
-
   function renderCheckboxList(container, items, options = {}) {
     const normalizedItems = items.map(item => typeof item === 'string' ? { value: item, label: item } : item);
     const checkedValues = options.checkedValues === undefined
@@ -1495,12 +1335,6 @@
     }
   }
 
-  function getCheckedValues(container) {
-    return Array.from(container.querySelectorAll('input[type="checkbox"]:checked'))
-      .map(input => input.value)
-      .filter(Boolean);
-  }
-
   function getCheckedItems(container) {
     return Array.from(container.querySelectorAll('input[type="checkbox"]:checked'))
       .map(input => ({
@@ -1508,32 +1342,6 @@
         label: input.dataset.label || input.value
       }))
       .filter(item => item.value);
-  }
-
-  function setCheckedValues(container, values) {
-    const selected = new Set(values.map(normalizeValue));
-    container.querySelectorAll('input[type="checkbox"]').forEach(input => {
-      input.checked = selected.has(normalizeValue(input.value));
-    });
-  }
-
-  function syncChecklistDefaultsFromConfig() {
-    const configs = JSON.parse(els.configSurveyChecklist.dataset.configs || '[]');
-    if (!configs.length) return;
-
-    const checkedSurveys = new Set(getCheckedValues(els.configSurveyChecklist));
-    const selectedConfigs = configs.filter(config => checkedSurveys.has(config.survey));
-    if (!selectedConfigs.length) return;
-
-    const reportNames = selectedConfigs.map(config => config.newSheetName || config.survey).filter(Boolean);
-    if (reportNames.length && (!normalizeValue(els.reportNameInput.value) || normalizeValue(els.reportNameInput.value) === 'Distribution')) {
-      els.reportNameInput.value = reportNames.length === 1 ? reportNames[0] : 'Distribution';
-    }
-
-    const breakdownDefaults = uniqueList(selectedConfigs.flatMap(config => config.disaggCols || []));
-    const siteDefaults = uniqueList(selectedConfigs.flatMap(config => config.siteDisaggCols || []));
-    if (breakdownDefaults.length) setCheckedValues(els.breakdownChecklist, breakdownDefaults);
-    if (siteDefaults.length) setCheckedValues(els.siteChecklist, siteDefaults);
   }
 
   function getReportUniqueValues(rows, column) {
