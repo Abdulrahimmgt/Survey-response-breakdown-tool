@@ -58,8 +58,6 @@
     sheetPickerWrap: document.getElementById('sheetPickerWrap'),
     sheetSelect: document.getElementById('sheetSelect'),
     fileStats: document.getElementById('fileStats'),
-    previewSection: document.getElementById('previewSection'),
-    previewTable: document.getElementById('previewTable'),
     dashboardSection: document.getElementById('dashboardSection'),
     chartGrid: document.getElementById('chartGrid'),
     addChartBtn: document.getElementById('addChartBtn'),
@@ -75,7 +73,6 @@
     questionChecklist: document.getElementById('questionChecklist'),
     reportColumnNote: document.getElementById('reportColumnNote'),
     primaryBreakdownSelect: document.getElementById('primaryBreakdownSelect'),
-    secondaryBreakdownSelect: document.getElementById('secondaryBreakdownSelect'),
     generateReportBtn: document.getElementById('generateReportBtn'),
     downloadReportCsvBtn: document.getElementById('downloadReportCsvBtn'),
     downloadReportXlsxBtn: document.getElementById('downloadReportXlsxBtn'),
@@ -93,6 +90,7 @@
   els.loadPublicSheetBtn.addEventListener('click', loadPublicGoogleSheet);
   els.reportSourceSelect.addEventListener('change', renderReportControls);
   els.reportDataSheetSelect.addEventListener('change', renderReportColumns);
+  els.primaryBreakdownSelect.addEventListener('change', syncBreakdownQuestionSelection);
   els.generateReportBtn.addEventListener('click', generateDistributionReport);
   els.downloadReportCsvBtn.addEventListener('click', downloadDistributionCsv);
   els.downloadReportXlsxBtn.addEventListener('click', downloadDistributionXlsx);
@@ -198,11 +196,9 @@
     const hasData = state.rows.length > 0 && state.columns.length > 0;
     els.emptyState.classList.toggle('hidden', hasData);
     els.fileDetails.classList.toggle('hidden', !state.workbook);
-    els.previewSection.classList.toggle('hidden', !state.workbook);
     els.dashboardSection.classList.toggle('hidden', !hasData);
 
     renderFileStats();
-    renderPreview();
     renderAllCharts();
     renderReportControls();
   }
@@ -221,26 +217,6 @@
         <strong>${escapeHtml(value)}</strong>
       </div>
     `).join('');
-  }
-
-  function renderPreview() {
-    if (!state.workbook) return;
-    if (!state.rows.length || !state.columns.length) {
-      els.previewTable.innerHTML = '<div class="chart-empty">No data is available in this sheet.</div>';
-      return;
-    }
-
-    const rows = state.rows.slice(0, 20);
-    els.previewTable.innerHTML = `
-      <table>
-        <thead><tr>${state.columns.map(column => `<th>${escapeHtml(column)}</th>`).join('')}</tr></thead>
-        <tbody>
-          ${rows.map(row => `
-            <tr>${state.columns.map(column => `<td>${escapeHtml(displayCell(row[column]))}</td>`).join('')}</tr>
-          `).join('')}
-        </tbody>
-      </table>
-    `;
   }
 
   function addChart(sourceConfig) {
@@ -1000,7 +976,7 @@
     const disabled = !source;
     [
       els.reportNameInput, els.reportDataSheetSelect,
-      els.primaryBreakdownSelect, els.secondaryBreakdownSelect,
+      els.primaryBreakdownSelect,
       els.generateReportBtn, els.downloadReportCsvBtn, els.downloadReportXlsxBtn
     ].forEach(control => {
       control.disabled = disabled;
@@ -1009,7 +985,6 @@
     if (!source) {
       els.reportDataSheetSelect.innerHTML = '<option value="">No sheets</option>';
       els.primaryBreakdownSelect.innerHTML = '<option value="">No breakdown</option>';
-      els.secondaryBreakdownSelect.innerHTML = '<option value="">No extra breakdown</option>';
       renderCheckboxList(els.questionChecklist, [], { emptyText: 'No response columns found' });
       updateReportColumnNote([]);
       return;
@@ -1040,9 +1015,19 @@
       checkedValues: defaultResponseColumns.length ? defaultResponseColumns : eligibleColumns,
       emptyText: 'No response columns found'
     });
-    populateSelect(els.primaryBreakdownSelect, eligibleColumns, pickColumn(eligibleColumns, /frequency|program|type|group|category|site|survey|test_name/i), true, 'No main breakdown');
-    populateSelect(els.secondaryBreakdownSelect, eligibleColumns, pickColumn(eligibleColumns, /test_name|pre|post|survey/i), true, 'No extra breakdown');
+    populateSelect(els.primaryBreakdownSelect, eligibleColumns, '', true, 'No main breakdown');
+    els.primaryBreakdownSelect.value = '';
     updateReportColumnNote(ignoredColumns);
+  }
+
+  function syncBreakdownQuestionSelection() {
+    const breakdownColumn = els.primaryBreakdownSelect.value;
+    if (!breakdownColumn) return;
+    Array.from(els.questionChecklist.querySelectorAll('input[type="checkbox"]'))
+      .filter(input => input.value === breakdownColumn)
+      .forEach(input => {
+        input.checked = false;
+      });
   }
 
   function updateReportColumnNote(ignoredColumns) {
@@ -1069,13 +1054,13 @@
       const dataRows = getSheetRecords(source.workbook, els.reportDataSheetSelect.value);
       const reportName = normalizeValue(els.reportNameInput.value) || 'Distribution';
       const breakdownColumns = uniqueList([
-        els.primaryBreakdownSelect.value,
-        els.secondaryBreakdownSelect.value
+        els.primaryBreakdownSelect.value
       ]).filter(column => column && column in (dataRows[0] || {}));
+      const breakdownSet = new Set(breakdownColumns);
       const questions = getCheckedItems(els.questionChecklist).map(item => ({
         column: item.value,
         display: item.label
-      }));
+      })).filter(question => !breakdownSet.has(question.column));
 
       if (!dataRows.length) throw new Error('The raw data sheet has no rows.');
       if (!questions.length) throw new Error('Select at least one response column to include.');
@@ -1087,6 +1072,7 @@
         rows: output.rows,
         skipped: output.skipped,
         questionCount: output.questionCount,
+        breakdownLabel: output.breakdownLabel,
         sourceName: source.name
       };
       renderDistributionOutput(state.reportResult);
@@ -1102,6 +1088,19 @@
     const rows = [];
     const skipped = [];
     let questionCount = 0;
+    const breakdownLabel = breakdownColumns.length ? breakdownColumns[0] : 'No main breakdown selected';
+    const contextWidth = getReportSectionWidth(dataRows, breakdownColumns);
+    const contextRow = Array(contextWidth).fill('');
+    contextRow[0] = 'Break down by responses in';
+    contextRow[1] = breakdownLabel;
+    aoa.push(contextRow);
+    rows.push(contextRow.map((value, index) => ({
+      value,
+      type: index === 0 ? 'meta-label' : index === 1 ? 'meta-value' : 'blank'
+    })));
+    const contextSpacer = Array(contextWidth).fill('');
+    aoa.push(contextSpacer);
+    rows.push(contextSpacer.map(value => ({ value, type: 'spacer' })));
 
     questions.forEach(question => {
       if (!(question.column in (dataRows[0] || {}))) {
@@ -1114,7 +1113,7 @@
       questionCount += 1;
     });
 
-    return { aoa, rows, skipped, questionCount };
+    return { aoa, rows, skipped, questionCount, breakdownLabel };
   }
 
   function buildQuestionSection(dataRows, displayName, questionColumn, breakdownColumns) {
@@ -1165,6 +1164,12 @@
     return { aoa, rows };
   }
 
+  function getReportSectionWidth(dataRows, breakdownColumns) {
+    const combos = createBreakdownCombos(dataRows, breakdownColumns);
+    const headerRows = createReportHeaderRows(combos, breakdownColumns);
+    return Math.max(3, headerRows[0].length + 1);
+  }
+
   function createReportHeaderRows(combos, breakdownColumns) {
     if (!breakdownColumns.length) return [['Count', 'Percentage']];
 
@@ -1209,7 +1214,7 @@
   function renderDistributionOutput(result) {
     els.reportOutputTitle.textContent = result.title;
     const skippedText = result.skipped.length ? `, skipped ${result.skipped.length} missing columns` : '';
-    els.reportOutputMeta.textContent = `${result.questionCount} response columns from ${result.sourceName}${skippedText}`;
+    els.reportOutputMeta.textContent = `${result.questionCount} response columns from ${result.sourceName}; breakdown: ${result.breakdownLabel}${skippedText}`;
     els.distributionOutput.innerHTML = `
       <table>
         <tbody>
@@ -1226,6 +1231,8 @@
 
   function renderReportCell(cell) {
     if (cell.type === 'spacer') return '<td></td>';
+    if (cell.type === 'meta-label') return `<td class="report-meta-label">${escapeHtml(cell.value)}</td>`;
+    if (cell.type === 'meta-value') return `<td class="report-meta-value">${escapeHtml(cell.value)}</td>`;
     if (cell.type === 'question') return `<td class="question-title">${escapeHtml(cell.value)}</td>`;
     if (cell.type === 'header') return `<td class="report-header">${escapeHtml(cell.value)}</td>`;
     if (cell.type === 'count') return `<td class="number">${formatNumber(cell.value)}</td>`;
@@ -1478,7 +1485,6 @@
     state.reportResult = null;
     els.chartGrid.innerHTML = '';
     els.fileStats.innerHTML = '';
-    els.previewTable.innerHTML = '';
     els.reportOutputTitle.textContent = 'No report generated yet';
     els.reportOutputMeta.textContent = 'Select a source and generate a report.';
     els.distributionOutput.innerHTML = '<div class="report-empty">Upload a workbook or load a public Google Sheet, then choose the input settings.</div>';

@@ -43,14 +43,6 @@
       <div id="fileStats" class="stats-grid"></div>
     </section>
 
-    <section id="previewSection" class="preview-section hidden" aria-labelledby="preview-title">
-      <div class="section-heading">
-        <h2 id="preview-title">Data preview</h2>
-        <p>First 20 rows</p>
-      </div>
-      <div id="previewTable" class="table-wrap"></div>
-    </section>
-
     <section id="dashboardSection" class="dashboard-section hidden" aria-labelledby="dashboard-title">
       <div class="section-heading dashboard-heading">
         <div>
@@ -100,16 +92,10 @@
             <div id="questionChecklist" class="checklist-box tall"></div>
             <div id="reportColumnNote" class="column-note"></div>
           </div>
-          <div class="two-col-fields">
-            <label class="field">
-              <span>Break down by responses in</span>
-              <select id="primaryBreakdownSelect"></select>
-            </label>
-            <label class="field">
-              <span>Then also break down by</span>
-              <select id="secondaryBreakdownSelect"></select>
-            </label>
-          </div>
+          <label class="field report-breakdown-field">
+            <span>Break down by responses in</span>
+            <select id="primaryBreakdownSelect"></select>
+          </label>
           <div class="button-row report-actions">
             <button id="generateReportBtn" class="primary-btn" type="button" title="Generate distribution report">Generate report</button>
             <button id="downloadReportCsvBtn" class="secondary-btn" type="button" title="Download report as CSV">Download CSV</button>
@@ -131,7 +117,7 @@
 
     <section id="emptyState" class="empty-state">
       <h2>No file uploaded yet</h2>
-      <p>Upload a spreadsheet to preview the rows and start building charts.</p>
+      <p>Upload a spreadsheet to start building charts and distribution reports.</p>
     </section>
   </main>
 

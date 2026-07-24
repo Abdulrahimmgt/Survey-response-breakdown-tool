@@ -96,7 +96,6 @@ h3 {
 
 .upload-panel,
 .file-details,
-.preview-section,
 .dashboard-section,
 .distribution-section,
 .empty-state {
@@ -174,7 +173,6 @@ h3 {
 }
 
 .file-details,
-.preview-section,
 .dashboard-section,
 .distribution-section,
 .empty-state {
@@ -586,7 +584,7 @@ th.number {
 
 .report-builder {
   display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  grid-template-columns: minmax(240px, 315px) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -606,6 +604,10 @@ th.number {
   gap: 10px;
 }
 
+.report-breakdown-field {
+  padding-top: 2px;
+}
+
 .checklist-box {
   display: grid;
   gap: 6px;
@@ -618,7 +620,7 @@ th.number {
 }
 
 .checklist-box.tall {
-  max-height: 210px;
+  max-height: 190px;
 }
 
 .checklist-box label {
@@ -678,8 +680,8 @@ th.number {
   align-items: baseline;
   justify-content: space-between;
   min-height: 44px;
-  margin-bottom: 10px;
-  padding: 10px 12px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -687,25 +689,29 @@ th.number {
 
 .report-summary-bar span {
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: 0.8rem;
 }
 
 .distribution-output {
+  height: min(62vh, 560px);
   min-height: 360px;
+  max-height: 560px;
   background: #fff;
+  overscroll-behavior: contain;
 }
 
 .distribution-output table {
-  min-width: 760px;
+  min-width: 700px;
   table-layout: auto;
 }
 
 .distribution-output th,
 .distribution-output td {
-  font-size: 0.82rem;
+  padding: 7px 8px;
+  font-size: 0.76rem;
   line-height: 1.25;
-  min-width: 76px;
-  max-width: 180px;
+  min-width: 64px;
+  max-width: 150px;
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -713,7 +719,7 @@ th.number {
 
 .distribution-output td.number,
 .distribution-output th.number {
-  min-width: 68px;
+  min-width: 58px;
   white-space: nowrap;
   text-align: right;
 }
@@ -722,8 +728,8 @@ th.number {
   position: sticky;
   left: 0;
   z-index: 2;
-  min-width: 220px;
-  max-width: 320px;
+  min-width: 190px;
+  max-width: 280px;
   background: #fff;
   color: var(--ink);
   font-weight: 700;
@@ -731,16 +737,30 @@ th.number {
 }
 
 .distribution-output .report-header {
-  background: #eef4f7;
+  background: #e9f1f5;
   color: #29404b;
   font-weight: 700;
 }
 
-.distribution-output td:first-child:not(.question-title) {
+.distribution-output .report-meta-label,
+.distribution-output .report-meta-value {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: #17313b;
+  color: #fff;
+  font-weight: 700;
+}
+
+.distribution-output .report-meta-value {
+  color: #d7f3ee;
+}
+
+.distribution-output td:first-child:not(.question-title):not(.report-meta-label) {
   position: sticky;
   left: 0;
   z-index: 1;
-  max-width: 260px;
+  max-width: 230px;
   background: #fff;
 }
 
