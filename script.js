@@ -84,6 +84,7 @@
     downloadReportXlsxBtn: document.getElementById('downloadReportXlsxBtn'),
     reportOutputTitle: document.getElementById('reportOutputTitle'),
     reportOutputMeta: document.getElementById('reportOutputMeta'),
+    reportContextBar: document.getElementById('reportContextBar'),
     distributionOutput: document.getElementById('distributionOutput')
   };
 
@@ -1031,14 +1032,16 @@
     }));
     const filterColumnStats = columns.map(column => ({
       column,
+      nonBlankUniqueCount: getReportUniqueValues(dataRows, column).length,
       uniqueCount: getReportFilterValues(dataRows, column).length
     }));
     const eligibleColumns = columnStats
-      .filter(item => item.uniqueCount <= REPORT_UNIQUE_VALUE_LIMIT)
+      .filter(item => item.uniqueCount > 0 && item.uniqueCount <= REPORT_UNIQUE_VALUE_LIMIT)
       .map(item => item.column);
     const eligibleFilterColumns = filterColumnStats
-      .filter(item => item.uniqueCount > 0 && item.uniqueCount < REPORT_FILTER_UNIQUE_VALUE_LIMIT)
+      .filter(item => item.nonBlankUniqueCount > 0 && item.uniqueCount > 0 && item.uniqueCount < REPORT_FILTER_UNIQUE_VALUE_LIMIT)
       .map(item => item.column);
+    const emptyColumns = columnStats.filter(item => item.uniqueCount === 0);
     const ignoredColumns = columnStats.filter(item => item.uniqueCount > REPORT_UNIQUE_VALUE_LIMIT);
     const responseColumns = columns.filter(column => !isLikelyMetadataColumn(column));
     const defaultResponseColumns = responseColumns.filter(column => eligibleColumns.includes(column));
@@ -1051,7 +1054,7 @@
     populateSelect(els.reportFilterColumnSelect, eligibleFilterColumns, '', true, 'No filter');
     els.reportFilterColumnSelect.value = '';
     renderReportFilterValues();
-    updateReportColumnNote(ignoredColumns);
+    updateReportColumnNote(ignoredColumns, emptyColumns);
   }
 
   function renderReportFilterValues() {
@@ -1098,17 +1101,25 @@
       });
   }
 
-  function updateReportColumnNote(ignoredColumns) {
+  function updateReportColumnNote(ignoredColumns, emptyColumns = []) {
     if (!els.reportColumnNote) return;
-    if (!ignoredColumns.length) {
+    if (!ignoredColumns.length && !emptyColumns.length) {
       els.reportColumnNote.textContent = `Only columns with ${REPORT_UNIQUE_VALUE_LIMIT} or fewer unique responses are shown here.`;
       return;
     }
 
-    const names = ignoredColumns.slice(0, 4).map(item => item.column).join(', ');
-    const extra = ignoredColumns.length > 4 ? `, and ${ignoredColumns.length - 4} more` : '';
-    const reason = ignoredColumns.length === 1 ? 'it has' : 'they have';
-    els.reportColumnNote.textContent = `${ignoredColumns.length} column${ignoredColumns.length === 1 ? '' : 's'} hidden because ${reason} more than ${REPORT_UNIQUE_VALUE_LIMIT} unique responses: ${names}${extra}.`;
+    const parts = [];
+    if (ignoredColumns.length) {
+      const names = ignoredColumns.slice(0, 4).map(item => item.column).join(', ');
+      const extra = ignoredColumns.length > 4 ? `, and ${ignoredColumns.length - 4} more` : '';
+      parts.push(`${ignoredColumns.length} column${ignoredColumns.length === 1 ? '' : 's'} hidden because ${ignoredColumns.length === 1 ? 'it has' : 'they have'} more than ${REPORT_UNIQUE_VALUE_LIMIT} unique responses: ${names}${extra}`);
+    }
+    if (emptyColumns.length) {
+      const names = emptyColumns.slice(0, 4).map(item => item.column).join(', ');
+      const extra = emptyColumns.length > 4 ? `, and ${emptyColumns.length - 4} more` : '';
+      parts.push(`${emptyColumns.length} empty column${emptyColumns.length === 1 ? '' : 's'} hidden: ${names}${extra}`);
+    }
+    els.reportColumnNote.textContent = `${parts.join('. ')}.`;
   }
 
   function generateDistributionReport() {
@@ -1188,13 +1199,6 @@
     const skipped = [];
     let questionCount = 0;
     const breakdownLabel = breakdownColumns.length ? breakdownColumns[0] : 'No main breakdown selected';
-    const contextWidth = getReportSectionWidth(dataRows, breakdownColumns);
-    addReportContextRow(aoa, rows, contextWidth, 'Breakdown', breakdownLabel);
-    addReportContextRow(aoa, rows, contextWidth, 'Filter', filterLabel);
-    const contextSpacer = Array(contextWidth).fill('');
-    aoa.push(contextSpacer);
-    rows.push(contextSpacer.map(value => ({ value, type: 'spacer' })));
-
     questions.forEach(question => {
       if (!(question.column in (dataRows[0] || {}))) {
         skipped.push(question.column);
@@ -1207,17 +1211,6 @@
     });
 
     return { aoa, rows, skipped, questionCount, breakdownLabel, filterLabel };
-  }
-
-  function addReportContextRow(aoa, rows, width, label, value) {
-    const contextRow = Array(width).fill('');
-    contextRow[0] = label;
-    contextRow[1] = value;
-    aoa.push(contextRow);
-    rows.push([
-      { value: label, type: 'meta-label' },
-      { value, type: 'meta-value', colspan: Math.max(1, width - 1) }
-    ]);
   }
 
   function buildQuestionSection(dataRows, displayName, questionColumn, breakdownColumns) {
@@ -1318,7 +1311,8 @@
   function renderDistributionOutput(result) {
     els.reportOutputTitle.textContent = result.title;
     const skippedText = result.skipped.length ? `, skipped ${result.skipped.length} missing columns` : '';
-    els.reportOutputMeta.textContent = `${result.questionCount} response columns from ${result.sourceName}; breakdown: ${result.breakdownLabel}; filter: ${result.filterLabel}${skippedText}`;
+    els.reportOutputMeta.textContent = `${result.questionCount} response columns from ${result.sourceName}${skippedText}`;
+    renderReportContextBar(result);
     els.distributionOutput.innerHTML = `
       <table>
         <tbody>
@@ -1331,6 +1325,24 @@
         </tbody>
       </table>
     `;
+  }
+
+  function renderReportContextBar(result) {
+    const items = [];
+    if (result.breakdownLabel && result.breakdownLabel !== 'No main breakdown selected') {
+      items.push(['Breakdown', result.breakdownLabel]);
+    }
+    if (result.filterLabel && result.filterLabel !== 'All rows') {
+      items.push(['Filter', result.filterLabel]);
+    }
+
+    els.reportContextBar.classList.toggle('hidden', !items.length);
+    els.reportContextBar.innerHTML = items.map(([label, value]) => `
+      <div class="report-context-chip">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+      </div>
+    `).join('');
   }
 
   function renderReportCell(cell) {
@@ -1611,6 +1623,8 @@
     els.fileStats.innerHTML = '';
     els.reportOutputTitle.textContent = 'No report generated yet';
     els.reportOutputMeta.textContent = 'Select a source and generate a report.';
+    els.reportContextBar.classList.add('hidden');
+    els.reportContextBar.innerHTML = '';
     els.distributionOutput.innerHTML = '<div class="report-empty">Upload a workbook or load a public Google Sheet, then choose the input settings.</div>';
     renderDataset();
   }

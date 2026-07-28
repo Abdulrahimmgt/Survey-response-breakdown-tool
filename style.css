@@ -703,10 +703,42 @@ th.number {
   white-space: nowrap;
 }
 
+.report-context-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  overflow-x: auto;
+}
+
+.report-context-chip {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  align-items: center;
+  max-width: min(760px, 100%);
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f7fbfc;
+  color: #29404b;
+  font-size: 0.78rem;
+}
+
+.report-context-chip span {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.report-context-chip strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .distribution-output {
-  height: min(62vh, 560px);
-  min-height: 360px;
-  max-height: 560px;
+  height: min(72vh, 680px);
+  min-height: 460px;
+  max-height: 680px;
   background: #fff;
   overscroll-behavior: contain;
 }

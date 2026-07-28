@@ -48,7 +48,7 @@ For best results, include sheets like:
 
 - A raw data sheet with one header row.
 
-Response-column choices appear checked by default so you can uncheck anything you do not want in the output. Columns with more than 15 unique responses are hidden from report choices so open-ended questions do not create unusable breakdowns. The breakdown dropdown starts with no breakdown selected; when you choose one, that choice appears at the top of the on-screen report and exported file. The report filter lets you select a column with fewer than 500 unique values, then uncheck values you want to exclude.
+Response-column choices appear checked by default so you can uncheck anything you do not want in the output. Columns with no responses or more than 15 unique responses are hidden from report choices so empty and open-ended questions do not create unusable breakdowns. The breakdown dropdown starts with no breakdown selected; when you choose one, that choice appears above the on-screen report. The report filter lets you select a column with fewer than 500 unique values, then uncheck values you want to exclude.
 
 Private Google Sheets are not connected in this version because that would require Google sign-in/API setup.
 
