@@ -1199,10 +1199,10 @@
     contextRow[0] = label;
     contextRow[1] = value;
     aoa.push(contextRow);
-    rows.push(contextRow.map((cellValue, index) => ({
-      value: cellValue,
-      type: index === 0 ? 'meta-label' : index === 1 ? 'meta-value' : 'blank'
-    })));
+    rows.push([
+      { value: label, type: 'meta-label' },
+      { value, type: 'meta-value', colspan: Math.max(1, width - 1) }
+    ]);
   }
 
   function buildQuestionSection(dataRows, displayName, questionColumn, breakdownColumns) {
@@ -1319,17 +1319,18 @@
   }
 
   function renderReportCell(cell) {
+    const colspan = cell.colspan ? ` colspan="${cell.colspan}"` : '';
     if (cell.type === 'spacer') return '<td></td>';
-    if (cell.type === 'meta-label') return `<td class="report-meta-label">${escapeHtml(cell.value)}</td>`;
-    if (cell.type === 'meta-value') return `<td class="report-meta-value">${escapeHtml(cell.value)}</td>`;
-    if (cell.type === 'question') return `<td class="question-title">${escapeHtml(cell.value)}</td>`;
-    if (cell.type === 'header') return `<td class="report-header">${escapeHtml(cell.value)}</td>`;
-    if (cell.type === 'count') return `<td class="number">${formatNumber(cell.value)}</td>`;
+    if (cell.type === 'meta-label') return `<td${colspan} class="report-meta-label">${escapeHtml(cell.value)}</td>`;
+    if (cell.type === 'meta-value') return `<td${colspan} class="report-meta-value">${escapeHtml(cell.value)}</td>`;
+    if (cell.type === 'question') return `<td${colspan} class="question-title">${escapeHtml(cell.value)}</td>`;
+    if (cell.type === 'header') return `<td${colspan} class="report-header">${escapeHtml(cell.value)}</td>`;
+    if (cell.type === 'count') return `<td${colspan} class="number">${formatNumber(cell.value)}</td>`;
     if (cell.type === 'percent') {
       const percent = Number(cell.value) || 0;
-      return `<td class="number heat-cell" style="background:${getHeatColor(percent)}">${formatPercent(percent)}</td>`;
+      return `<td${colspan} class="number heat-cell" style="background:${getHeatColor(percent)}">${formatPercent(percent)}</td>`;
     }
-    return `<td>${escapeHtml(cell.value)}</td>`;
+    return `<td${colspan}>${escapeHtml(cell.value)}</td>`;
   }
 
   function downloadDistributionCsv() {

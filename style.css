@@ -679,9 +679,9 @@ th.number {
 
 .report-summary-bar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px 14px;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   min-height: 44px;
   margin-bottom: 8px;
@@ -689,11 +689,18 @@ th.number {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
+  overflow-x: auto;
+}
+
+.report-summary-bar strong {
+  flex: 0 0 auto;
 }
 
 .report-summary-bar span {
+  flex: 0 0 auto;
   color: var(--muted);
   font-size: 0.8rem;
+  white-space: nowrap;
 }
 
 .distribution-output {
@@ -751,15 +758,18 @@ th.number {
   position: sticky;
   top: 0;
   z-index: 4;
+  max-width: none;
   background: #17313b;
   color: #fff;
   font-weight: 700;
   white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .distribution-output .report-meta-value {
+  min-width: max-content;
   color: #d7f3ee;
-  white-space: normal;
 }
 
 .distribution-output td:first-child:not(.question-title):not(.report-meta-label) {
