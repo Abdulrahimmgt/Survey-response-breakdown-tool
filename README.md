@@ -8,6 +8,7 @@ A static web app for analyzing Excel, CSV, and public Google Sheets survey-style
 - Load a public Google Sheet that does not require sign-in.
 - Choose a sheet when an Excel file has multiple sheets.
 - Create multiple chart cards from the same file.
+- Hide open-ended-style columns from chart choices when they have more than 15 unique responses.
 - Analyze one column by response count and percentage.
 - Compare one column against another.
 - Add one or more checklist filters.

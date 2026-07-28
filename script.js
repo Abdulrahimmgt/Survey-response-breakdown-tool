@@ -46,6 +46,8 @@
     sheetName: '',
     rows: [],
     columns: [],
+    rawColumnCount: 0,
+    excludedChartColumns: [],
     charts: [],
     nextChartNumber: 1,
     sources: [],
@@ -163,6 +165,8 @@
     state.sheetName = sheetName;
     state.rows = [];
     state.columns = [];
+    state.rawColumnCount = 0;
+    state.excludedChartColumns = [];
 
     if (!rawRows.length) {
       renderDataset();
@@ -170,16 +174,22 @@
       return;
     }
 
-    state.columns = makeUniqueHeaders(rawRows[0]);
-    state.rows = rawRows.slice(1)
+    const allColumns = makeUniqueHeaders(rawRows[0]);
+    const allRows = rawRows.slice(1)
       .filter(row => row.some(cell => normalizeValue(cell) !== ''))
       .map(row => {
         const record = {};
-        state.columns.forEach((column, index) => {
+        allColumns.forEach((column, index) => {
           record[column] = row[index] === undefined ? '' : row[index];
         });
         return record;
       });
+    const chartColumns = getColumnsWithinUniqueLimit(allRows, allColumns, REPORT_UNIQUE_VALUE_LIMIT);
+
+    state.rawColumnCount = allColumns.length;
+    state.excludedChartColumns = allColumns.filter(column => !chartColumns.includes(column));
+    state.columns = chartColumns;
+    state.rows = allRows.map(row => pickRecordColumns(row, chartColumns));
 
     state.charts = [];
     state.nextChartNumber = 1;
@@ -214,8 +224,10 @@
       ['File name', state.fileName],
       ['Selected sheet', state.sheetName || 'None'],
       ['Total rows', formatNumber(state.rows.length)],
-      ['Total columns', formatNumber(state.columns.length)]
+      ['Chart-ready columns', formatNumber(state.columns.length)]
     ];
+    if (state.rawColumnCount) stats.push(['Original columns', formatNumber(state.rawColumnCount)]);
+    if (state.excludedChartColumns.length) stats.push(['Hidden open-ended columns', formatNumber(state.excludedChartColumns.length)]);
     els.fileStats.innerHTML = stats.map(([label, value]) => `
       <div class="stat">
         <span>${escapeHtml(label)}</span>
@@ -404,11 +416,14 @@
     const options = includeNone ? ['<option value="">No comparison</option>'] : [];
     options.push(...state.columns.map(column => `<option value="${escapeAttr(column)}">${escapeHtml(column)}</option>`));
     select.innerHTML = options.join('');
-    select.value = selectedValue;
+    if (selectedValue && state.columns.includes(selectedValue)) select.value = selectedValue;
+    else select.value = includeNone ? '' : (state.columns[0] || '');
   }
 
   function updateChartCard(chart, card) {
     if (!state.rows.length || !state.columns.length) return;
+    if (!state.columns.includes(chart.primaryColumn)) chart.primaryColumn = state.columns[0] || '';
+    if (chart.compareColumn && !state.columns.includes(chart.compareColumn)) chart.compareColumn = '';
 
     const isComparison = Boolean(chart.compareColumn);
     card.querySelectorAll('.single-setting').forEach(el => el.classList.toggle('hidden', isComparison));
@@ -1490,6 +1505,18 @@
       .sort((a, b) => a.localeCompare(b));
   }
 
+  function getColumnsWithinUniqueLimit(rows, columns, limit) {
+    return columns.filter(column => getReportUniqueValues(rows, column).length <= limit);
+  }
+
+  function pickRecordColumns(row, columns) {
+    const record = {};
+    columns.forEach(column => {
+      record[column] = row[column] === undefined ? '' : row[column];
+    });
+    return record;
+  }
+
   function getReportValue(value) {
     const normalized = normalizeValue(value);
     return normalized === NO_RESPONSE ? '' : normalized;
@@ -1571,6 +1598,8 @@
     state.sheetName = '';
     state.rows = [];
     state.columns = [];
+    state.rawColumnCount = 0;
+    state.excludedChartColumns = [];
     state.charts.forEach(chart => {
       if (chart.chartInstance) chart.chartInstance.destroy();
     });
