@@ -623,6 +623,10 @@ th.number {
   max-height: 190px;
 }
 
+.report-filter-values {
+  max-height: 150px;
+}
+
 .checklist-box label {
   display: flex;
   gap: 7px;
@@ -750,10 +754,12 @@ th.number {
   background: #17313b;
   color: #fff;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .distribution-output .report-meta-value {
   color: #d7f3ee;
+  white-space: normal;
 }
 
 .distribution-output td:first-child:not(.question-title):not(.report-meta-label) {

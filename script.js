@@ -4,6 +4,7 @@
   const NO_RESPONSE = 'No Response';
   const TABLE_ROW_LIMIT = 10;
   const REPORT_UNIQUE_VALUE_LIMIT = 15;
+  const REPORT_FILTER_UNIQUE_VALUE_LIMIT = 500;
   const UPLOADED_SOURCE_ID = 'uploaded-workbook';
   const COLORS = [
     '#006b5f', '#d99b22', '#4b7f9f', '#c75050', '#6b8e4e',
@@ -73,6 +74,9 @@
     questionChecklist: document.getElementById('questionChecklist'),
     reportColumnNote: document.getElementById('reportColumnNote'),
     primaryBreakdownSelect: document.getElementById('primaryBreakdownSelect'),
+    reportFilterColumnSelect: document.getElementById('reportFilterColumnSelect'),
+    reportFilterValues: document.getElementById('reportFilterValues'),
+    reportFilterNote: document.getElementById('reportFilterNote'),
     generateReportBtn: document.getElementById('generateReportBtn'),
     downloadReportCsvBtn: document.getElementById('downloadReportCsvBtn'),
     downloadReportXlsxBtn: document.getElementById('downloadReportXlsxBtn'),
@@ -91,6 +95,7 @@
   els.reportSourceSelect.addEventListener('change', renderReportControls);
   els.reportDataSheetSelect.addEventListener('change', renderReportColumns);
   els.primaryBreakdownSelect.addEventListener('change', syncBreakdownQuestionSelection);
+  els.reportFilterColumnSelect.addEventListener('change', renderReportFilterValues);
   els.generateReportBtn.addEventListener('click', generateDistributionReport);
   els.downloadReportCsvBtn.addEventListener('click', downloadDistributionCsv);
   els.downloadReportXlsxBtn.addEventListener('click', downloadDistributionXlsx);
@@ -976,7 +981,7 @@
     const disabled = !source;
     [
       els.reportNameInput, els.reportDataSheetSelect,
-      els.primaryBreakdownSelect,
+      els.primaryBreakdownSelect, els.reportFilterColumnSelect,
       els.generateReportBtn, els.downloadReportCsvBtn, els.downloadReportXlsxBtn
     ].forEach(control => {
       control.disabled = disabled;
@@ -985,7 +990,11 @@
     if (!source) {
       els.reportDataSheetSelect.innerHTML = '<option value="">No sheets</option>';
       els.primaryBreakdownSelect.innerHTML = '<option value="">No breakdown</option>';
+      els.reportFilterColumnSelect.innerHTML = '<option value="">No filter</option>';
       renderCheckboxList(els.questionChecklist, [], { emptyText: 'No response columns found' });
+      renderCheckboxList(els.reportFilterValues, [], { emptyText: 'No filter values found' });
+      els.reportFilterValues.classList.add('hidden');
+      els.reportFilterNote.textContent = '';
       updateReportColumnNote([]);
       return;
     }
@@ -1005,8 +1014,15 @@
       column,
       uniqueCount: getReportUniqueValues(dataRows, column).length
     }));
+    const filterColumnStats = columns.map(column => ({
+      column,
+      uniqueCount: getReportFilterValues(dataRows, column).length
+    }));
     const eligibleColumns = columnStats
       .filter(item => item.uniqueCount <= REPORT_UNIQUE_VALUE_LIMIT)
+      .map(item => item.column);
+    const eligibleFilterColumns = filterColumnStats
+      .filter(item => item.uniqueCount > 0 && item.uniqueCount < REPORT_FILTER_UNIQUE_VALUE_LIMIT)
       .map(item => item.column);
     const ignoredColumns = columnStats.filter(item => item.uniqueCount > REPORT_UNIQUE_VALUE_LIMIT);
     const responseColumns = columns.filter(column => !isLikelyMetadataColumn(column));
@@ -1017,7 +1033,44 @@
     });
     populateSelect(els.primaryBreakdownSelect, eligibleColumns, '', true, 'No main breakdown');
     els.primaryBreakdownSelect.value = '';
+    populateSelect(els.reportFilterColumnSelect, eligibleFilterColumns, '', true, 'No filter');
+    els.reportFilterColumnSelect.value = '';
+    renderReportFilterValues();
     updateReportColumnNote(ignoredColumns);
+  }
+
+  function renderReportFilterValues() {
+    const source = getSelectedReportSource();
+    const sheetName = els.reportDataSheetSelect.value;
+    const filterColumn = els.reportFilterColumnSelect.value;
+    const dataRows = source && sheetName ? getSheetRecords(source.workbook, sheetName) : [];
+
+    if (!filterColumn || !dataRows.length) {
+      renderCheckboxList(els.reportFilterValues, [], { emptyText: 'No filter values found' });
+      els.reportFilterValues.classList.add('hidden');
+      els.reportFilterNote.textContent = `Filter columns must have fewer than ${REPORT_FILTER_UNIQUE_VALUE_LIMIT} unique values.`;
+      return;
+    }
+
+    const values = getReportFilterValues(dataRows, filterColumn);
+    renderCheckboxList(els.reportFilterValues, values.map(value => ({ value, label: value })), {
+      checkedValues: values,
+      emptyText: 'No filter values found',
+      onChange: updateReportFilterSelectionNote
+    });
+    els.reportFilterValues.classList.toggle('hidden', !values.length);
+    updateReportFilterSelectionNote();
+  }
+
+  function updateReportFilterSelectionNote() {
+    const inputs = Array.from(els.reportFilterValues.querySelectorAll('input[type="checkbox"]'));
+    if (!inputs.length) {
+      els.reportFilterNote.textContent = 'No filter values found for this column.';
+      return;
+    }
+
+    const selectedCount = inputs.filter(input => input.checked).length;
+    els.reportFilterNote.textContent = `${selectedCount} of ${inputs.length} filter value${inputs.length === 1 ? '' : 's'} selected.`;
   }
 
   function syncBreakdownQuestionSelection() {
@@ -1053,6 +1106,10 @@
     try {
       const dataRows = getSheetRecords(source.workbook, els.reportDataSheetSelect.value);
       const reportName = normalizeValue(els.reportNameInput.value) || 'Distribution';
+      if (!dataRows.length) throw new Error('The raw data sheet has no rows.');
+
+      const reportFilter = getReportFilter(dataRows);
+      const filteredRows = applyReportFilter(dataRows, reportFilter);
       const breakdownColumns = uniqueList([
         els.primaryBreakdownSelect.value
       ]).filter(column => column && column in (dataRows[0] || {}));
@@ -1062,10 +1119,10 @@
         display: item.label
       })).filter(question => !breakdownSet.has(question.column));
 
-      if (!dataRows.length) throw new Error('The raw data sheet has no rows.');
+      if (!filteredRows.length) throw new Error('No rows match the selected report filter.');
       if (!questions.length) throw new Error('Select at least one response column to include.');
 
-      const output = buildDistributionOutput(dataRows, questions, breakdownColumns);
+      const output = buildDistributionOutput(filteredRows, questions, breakdownColumns, reportFilter.label);
       state.reportResult = {
         title: reportName,
         aoa: output.aoa,
@@ -1073,6 +1130,7 @@
         skipped: output.skipped,
         questionCount: output.questionCount,
         breakdownLabel: output.breakdownLabel,
+        filterLabel: output.filterLabel,
         sourceName: source.name
       };
       renderDistributionOutput(state.reportResult);
@@ -1083,21 +1141,41 @@
     }
   }
 
-  function buildDistributionOutput(dataRows, questions, breakdownColumns) {
+  function getReportFilter(dataRows) {
+    const column = els.reportFilterColumnSelect.value;
+    if (!column) return { column: '', values: new Set(), label: 'All rows' };
+    const selectedValues = getCheckedItems(els.reportFilterValues).map(item => item.value);
+    const totalValues = getReportFilterValues(dataRows, column).length;
+    return {
+      column,
+      values: new Set(selectedValues.map(normalizeForMatch)),
+      label: formatReportFilterLabel(column, selectedValues, totalValues)
+    };
+  }
+
+  function formatReportFilterLabel(column, selectedValues, totalValues) {
+    if (!selectedValues.length) return `${column}: no values selected`;
+    if (selectedValues.length === totalValues) return `${column}: all ${totalValues} value${totalValues === 1 ? '' : 's'}`;
+    const preview = selectedValues.slice(0, 5).join(', ');
+    const extra = selectedValues.length > 5 ? `, and ${selectedValues.length - 5} more` : '';
+    return `${column}: ${preview}${extra}`;
+  }
+
+  function applyReportFilter(dataRows, filter) {
+    if (!filter.column) return dataRows;
+    if (!filter.values.size) return [];
+    return dataRows.filter(row => filter.values.has(normalizeForMatch(getResponseLabel(row[filter.column]))));
+  }
+
+  function buildDistributionOutput(dataRows, questions, breakdownColumns, filterLabel = 'All rows') {
     const aoa = [];
     const rows = [];
     const skipped = [];
     let questionCount = 0;
     const breakdownLabel = breakdownColumns.length ? breakdownColumns[0] : 'No main breakdown selected';
     const contextWidth = getReportSectionWidth(dataRows, breakdownColumns);
-    const contextRow = Array(contextWidth).fill('');
-    contextRow[0] = 'Break down by responses in';
-    contextRow[1] = breakdownLabel;
-    aoa.push(contextRow);
-    rows.push(contextRow.map((value, index) => ({
-      value,
-      type: index === 0 ? 'meta-label' : index === 1 ? 'meta-value' : 'blank'
-    })));
+    addReportContextRow(aoa, rows, contextWidth, 'Breakdown', breakdownLabel);
+    addReportContextRow(aoa, rows, contextWidth, 'Filter', filterLabel);
     const contextSpacer = Array(contextWidth).fill('');
     aoa.push(contextSpacer);
     rows.push(contextSpacer.map(value => ({ value, type: 'spacer' })));
@@ -1113,7 +1191,18 @@
       questionCount += 1;
     });
 
-    return { aoa, rows, skipped, questionCount, breakdownLabel };
+    return { aoa, rows, skipped, questionCount, breakdownLabel, filterLabel };
+  }
+
+  function addReportContextRow(aoa, rows, width, label, value) {
+    const contextRow = Array(width).fill('');
+    contextRow[0] = label;
+    contextRow[1] = value;
+    aoa.push(contextRow);
+    rows.push(contextRow.map((cellValue, index) => ({
+      value: cellValue,
+      type: index === 0 ? 'meta-label' : index === 1 ? 'meta-value' : 'blank'
+    })));
   }
 
   function buildQuestionSection(dataRows, displayName, questionColumn, breakdownColumns) {
@@ -1214,7 +1303,7 @@
   function renderDistributionOutput(result) {
     els.reportOutputTitle.textContent = result.title;
     const skippedText = result.skipped.length ? `, skipped ${result.skipped.length} missing columns` : '';
-    els.reportOutputMeta.textContent = `${result.questionCount} response columns from ${result.sourceName}; breakdown: ${result.breakdownLabel}${skippedText}`;
+    els.reportOutputMeta.textContent = `${result.questionCount} response columns from ${result.sourceName}; breakdown: ${result.breakdownLabel}; filter: ${result.filterLabel}${skippedText}`;
     els.distributionOutput.innerHTML = `
       <table>
         <tbody>
@@ -1393,6 +1482,11 @@
       values.push(value);
     });
     return values;
+  }
+
+  function getReportFilterValues(rows, column) {
+    return Array.from(new Set(rows.map(row => getResponseLabel(row[column]))))
+      .sort((a, b) => a.localeCompare(b));
   }
 
   function getReportValue(value) {

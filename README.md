@@ -15,6 +15,7 @@ A static web app for analyzing Excel, CSV, and public Google Sheets survey-style
 - Generate sheet-style distribution reports from an uploaded workbook or public Google Sheet.
 - Choose response columns to include with checked lists.
 - Optionally break those response columns down by one selected column.
+- Filter distribution reports by one selected column with fewer than 500 unique values.
 - View the generated distribution table in a fixed scrollable panel with percentage heat maps.
 - Hide open-ended-style columns from report choices when they have more than 15 unique responses.
 - Export chart images, summary tables, and filtered data as CSV.
@@ -46,7 +47,7 @@ For best results, include sheets like:
 
 - A raw data sheet with one header row.
 
-Response-column choices appear checked by default so you can uncheck anything you do not want in the output. Columns with more than 15 unique responses are hidden from report choices so open-ended questions do not create unusable breakdowns. The breakdown dropdown starts with no breakdown selected; when you choose one, that choice appears at the top of the on-screen report and exported file.
+Response-column choices appear checked by default so you can uncheck anything you do not want in the output. Columns with more than 15 unique responses are hidden from report choices so open-ended questions do not create unusable breakdowns. The breakdown dropdown starts with no breakdown selected; when you choose one, that choice appears at the top of the on-screen report and exported file. The report filter lets you select a column with fewer than 500 unique values, then uncheck values you want to exclude.
 
 Private Google Sheets are not connected in this version because that would require Google sign-in/API setup.
 
