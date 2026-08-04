@@ -6,11 +6,14 @@
   const REPORT_UNIQUE_VALUE_LIMIT = 15;
   const REPORT_FILTER_UNIQUE_VALUE_LIMIT = 500;
   const UPLOADED_SOURCE_ID = 'uploaded-workbook';
-  const COLORS = [
-    '#006b5f', '#d99b22', '#4b7f9f', '#c75050', '#6b8e4e',
-    '#7f5aa2', '#2f9c95', '#9b6a35', '#4c647a', '#d06b9a',
-    '#6c8fbd', '#b6a136', '#3a8d5d', '#875c74'
-  ];
+  const rootStyles = getComputedStyle(document.documentElement);
+  const COLORS = Array.from({ length: 8 }, (_, index) =>
+    rootStyles.getPropertyValue(`--chart-${index + 1}`).trim()
+  ).filter(Boolean);
+  const CHART_TEXT = rootStyles.getPropertyValue('--chart-text').trim();
+  const CHART_MUTED = rootStyles.getPropertyValue('--chart-muted').trim();
+  const CHART_GRID = rootStyles.getPropertyValue('--chart-grid').trim();
+  const CHART_ON_COLOR = rootStyles.getPropertyValue('--chart-on-color').trim();
   const ANSWER_SETS = [
     ['Strongly disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly agree'],
     ['Not at all', 'Not really', 'Kind of', 'Definitely', 'Absolutely'],
@@ -46,31 +49,52 @@
     sheetName: '',
     rows: [],
     columns: [],
+    allRows: [],
+    allColumns: [],
+    hiddenAnalysisColumns: new Set(),
+    columnStats: new Map(),
     rawColumnCount: 0,
     excludedChartColumns: [],
     charts: [],
     nextChartNumber: 1,
     sources: [],
-    reportResult: null
+    reportResult: null,
+    activeTab: 'charts',
+    previewSearch: '',
+    reportZoom: 1
   };
 
   const els = {
     fileInput: document.getElementById('fileInput'),
+    fileDrop: document.getElementById('fileDrop'),
+    uploadPanel: document.getElementById('uploadPanel'),
     statusMessage: document.getElementById('statusMessage'),
     fileDetails: document.getElementById('fileDetails'),
     sheetPickerWrap: document.getElementById('sheetPickerWrap'),
     sheetSelect: document.getElementById('sheetSelect'),
     fileStats: document.getElementById('fileStats'),
+    datasetFileName: document.getElementById('datasetFileName'),
+    mainTabs: document.getElementById('mainTabs'),
+    tabButtons: Array.from(document.querySelectorAll('.tab-button')),
     dashboardSection: document.getElementById('dashboardSection'),
     chartGrid: document.getElementById('chartGrid'),
     addChartBtn: document.getElementById('addChartBtn'),
     emptyState: document.getElementById('emptyState'),
+    sampleDataBtn: document.getElementById('sampleDataBtn'),
+    changeSheetBtn: document.getElementById('changeSheetBtn'),
+    replaceFileBtn: document.getElementById('replaceFileBtn'),
+    clearDataBtn: document.getElementById('clearDataBtn'),
     chartTemplate: document.getElementById('chartCardTemplate'),
     filterTemplate: document.getElementById('filterTemplate'),
     reportSourceSelect: document.getElementById('reportSourceSelect'),
     publicSheetUrl: document.getElementById('publicSheetUrl'),
     loadPublicSheetBtn: document.getElementById('loadPublicSheetBtn'),
     reportStatus: document.getElementById('reportStatus'),
+    reportQuestionSearch: document.getElementById('reportQuestionSearch'),
+    selectAllQuestionsBtn: document.getElementById('selectAllQuestionsBtn'),
+    selectMultipleChoiceBtn: document.getElementById('selectMultipleChoiceBtn'),
+    clearQuestionsBtn: document.getElementById('clearQuestionsBtn'),
+    selectedQuestionCount: document.getElementById('selectedQuestionCount'),
     reportNameInput: document.getElementById('reportNameInput'),
     reportDataSheetSelect: document.getElementById('reportDataSheetSelect'),
     questionChecklist: document.getElementById('questionChecklist'),
@@ -85,11 +109,27 @@
     reportOutputTitle: document.getElementById('reportOutputTitle'),
     reportOutputMeta: document.getElementById('reportOutputMeta'),
     reportContextBar: document.getElementById('reportContextBar'),
-    distributionOutput: document.getElementById('distributionOutput')
+    distributionOutput: document.getElementById('distributionOutput'),
+    dataPreviewSection: document.getElementById('dataPreviewSection'),
+    previewSearch: document.getElementById('previewSearch'),
+    previewStats: document.getElementById('previewStats'),
+    columnProfiles: document.getElementById('columnProfiles'),
+    previewResultCount: document.getElementById('previewResultCount'),
+    dataPreviewTable: document.getElementById('dataPreviewTable'),
+    zoomOutBtn: document.getElementById('zoomOutBtn'),
+    zoomInBtn: document.getElementById('zoomInBtn'),
+    zoomValue: document.getElementById('zoomValue'),
+    fullscreenReportBtn: document.getElementById('fullscreenReportBtn'),
+    toastRegion: document.getElementById('toastRegion'),
+    confirmDialog: document.getElementById('confirmDialog'),
+    confirmTitle: document.getElementById('confirmTitle'),
+    confirmMessage: document.getElementById('confirmMessage'),
+    confirmActionBtn: document.getElementById('confirmActionBtn')
   };
 
   Chart.register(ChartDataLabels);
-  Chart.defaults.font.family = 'Arial, Helvetica, sans-serif';
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+  Chart.defaults.color = CHART_MUTED;
 
   els.fileInput.addEventListener('change', handleFileUpload);
   els.sheetSelect.addEventListener('change', () => loadSheet(els.sheetSelect.value));
@@ -102,10 +142,54 @@
   els.generateReportBtn.addEventListener('click', generateDistributionReport);
   els.downloadReportCsvBtn.addEventListener('click', downloadDistributionCsv);
   els.downloadReportXlsxBtn.addEventListener('click', downloadDistributionXlsx);
+  els.sampleDataBtn.addEventListener('click', loadSampleData);
+  els.changeSheetBtn.addEventListener('click', showSheetPicker);
+  els.replaceFileBtn.addEventListener('click', () => els.fileInput.click());
+  els.clearDataBtn.addEventListener('click', async () => {
+    if (await requestConfirmation('Clear this dataset?', 'Charts, filters, and the generated report will be removed. Your original file will not be changed.', 'Clear data')) {
+      resetDataset();
+      els.fileInput.value = '';
+      showStatus('Dataset cleared. Choose another source when you are ready.', '');
+      showToast('Dataset cleared.');
+    }
+  });
+  els.tabButtons.forEach(button => button.addEventListener('click', () => setActiveTab(button.dataset.tab)));
+  els.previewSearch.addEventListener('input', event => {
+    state.previewSearch = event.target.value;
+    renderDataPreview();
+  });
+  els.reportQuestionSearch.addEventListener('input', filterReportQuestions);
+  els.selectAllQuestionsBtn.addEventListener('click', () => setVisibleReportQuestions(true));
+  els.selectMultipleChoiceBtn.addEventListener('click', () => setVisibleReportQuestions(true));
+  els.clearQuestionsBtn.addEventListener('click', () => setVisibleReportQuestions(false));
+  document.querySelectorAll('[data-report-mode]').forEach(button => button.addEventListener('click', () => setReportMode(button.dataset.reportMode)));
+  document.querySelectorAll('[data-density]').forEach(button => button.addEventListener('click', () => setReportDensity(button.dataset.density)));
+  els.zoomOutBtn.addEventListener('click', () => setReportZoom(state.reportZoom - 0.1));
+  els.zoomInBtn.addEventListener('click', () => setReportZoom(state.reportZoom + 0.1));
+  els.fullscreenReportBtn.addEventListener('click', toggleReportFullscreen);
+
+  ['dragenter', 'dragover'].forEach(type => els.fileDrop.addEventListener(type, event => {
+    event.preventDefault();
+    els.fileDrop.classList.add('is-dragging');
+  }));
+  ['dragleave', 'drop'].forEach(type => els.fileDrop.addEventListener(type, event => {
+    event.preventDefault();
+    els.fileDrop.classList.remove('is-dragging');
+  }));
+  els.fileDrop.addEventListener('drop', event => {
+    const file = event.dataTransfer.files[0];
+    if (file) loadFile(file);
+  });
+  document.addEventListener('keydown', handleGlobalKeydown);
 
   async function handleFileUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
+
+    await loadFile(file);
+  }
+
+  async function loadFile(file) {
 
     const extension = file.name.split('.').pop().toLowerCase();
     if (!['xlsx', 'xls', 'csv'].includes(extension)) {
@@ -113,7 +197,8 @@
       return;
     }
 
-    showStatus('Reading your file...', '');
+    showStatus('Reading your file...', 'loading');
+    setButtonLoading(els.replaceFileBtn, true, 'Reading…');
     resetDataset();
 
     try {
@@ -133,13 +218,18 @@
 
       if (state.rows.length > 50000) {
         showStatus('Large file warning: this app is designed for normal files up to about 50,000 rows. It may take longer to update charts.', 'warning');
+        showToast('Large dataset loaded. Some updates may take longer.', 'warning');
       } else {
         showStatus('File loaded. Your data stays in this browser.', '');
+        showToast(`${file.name} loaded successfully.`);
       }
     } catch (error) {
       console.error(error);
       resetDataset();
       showStatus('This file could not be opened. It may be damaged or in an unsupported format.', 'error');
+      showToast('The file could not be opened.', 'error');
+    } finally {
+      setButtonLoading(els.replaceFileBtn, false);
     }
   }
 
@@ -166,6 +256,14 @@
     state.sheetName = sheetName;
     state.rows = [];
     state.columns = [];
+    state.allRows = [];
+    state.allColumns = [];
+    state.hiddenAnalysisColumns = new Set();
+    state.columnStats = new Map();
+    state.allRows = [];
+    state.allColumns = [];
+    state.hiddenAnalysisColumns = new Set();
+    state.columnStats = new Map();
     state.rawColumnCount = 0;
     state.excludedChartColumns = [];
 
@@ -189,13 +287,18 @@
 
     state.rawColumnCount = allColumns.length;
     state.excludedChartColumns = allColumns.filter(column => !chartColumns.includes(column));
-    state.columns = chartColumns;
-    state.rows = allRows.map(row => pickRecordColumns(row, chartColumns));
+    state.allColumns = allColumns;
+    state.allRows = allRows;
+    state.columnStats = buildColumnStats(allRows, allColumns);
+    updateAnalysisColumns();
 
     state.charts = [];
     state.nextChartNumber = 1;
     renderDataset();
-    if (state.columns.length && state.rows.length) addChart();
+    if (state.columns.length && state.rows.length) {
+      addChart();
+      setActiveTab('charts');
+    }
   }
 
   function makeUniqueHeaders(headerRow) {
@@ -210,25 +313,35 @@
 
   function renderDataset() {
     const hasData = state.rows.length > 0 && state.columns.length > 0;
-    els.emptyState.classList.toggle('hidden', hasData);
+    const hasDataset = Boolean(state.workbook && state.allRows.length);
+    els.emptyState.classList.toggle('hidden', hasDataset);
     els.fileDetails.classList.toggle('hidden', !state.workbook);
-    els.dashboardSection.classList.toggle('hidden', !hasData);
+    els.mainTabs.classList.toggle('hidden', !hasDataset);
+    els.uploadPanel.classList.toggle('is-compact', hasDataset);
+    els.addChartBtn.disabled = !hasData;
+
+    if (hasDataset) setActiveTab(state.activeTab || 'charts');
+    else {
+      els.dashboardSection.classList.add('hidden');
+      document.getElementById('distributionSection').classList.add('hidden');
+      els.dataPreviewSection.classList.add('hidden');
+    }
 
     renderFileStats();
     renderAllCharts();
     renderReportControls();
+    renderDataPreview();
   }
 
   function renderFileStats() {
     if (!state.workbook) return;
+    els.datasetFileName.textContent = state.fileName;
     const stats = [
-      ['File name', state.fileName],
-      ['Selected sheet', state.sheetName || 'None'],
-      ['Total rows', formatNumber(state.rows.length)],
-      ['Chart-ready columns', formatNumber(state.columns.length)]
+      ['Sheet', state.sheetName || 'None'],
+      ['Rows', formatNumber(state.allRows.length)],
+      ['Columns', formatNumber(state.rawColumnCount)],
+      ['Usable questions', formatNumber(state.columns.length)]
     ];
-    if (state.rawColumnCount) stats.push(['Original columns', formatNumber(state.rawColumnCount)]);
-    if (state.excludedChartColumns.length) stats.push(['Hidden open-ended columns', formatNumber(state.excludedChartColumns.length)]);
     els.fileStats.innerHTML = stats.map(([label, value]) => `
       <div class="stat">
         <span>${escapeHtml(label)}</span>
@@ -249,9 +362,10 @@
       id: makeId(),
       title: `Chart ${state.nextChartNumber}`,
       collapsed: false,
+      settingsCollapsed: false,
       primaryColumn: firstColumn,
       compareColumn: '',
-      chartType: 'bar',
+      chartType: 'auto',
       compareType: 'grouped',
       compareValueMode: 'counts',
       sortMode: 'desc',
@@ -302,25 +416,43 @@
     const card = fragment.querySelector('.chart-card');
     card.dataset.chartId = chart.id;
     card.classList.toggle('collapsed', chart.collapsed);
+    card.classList.toggle('settings-collapsed', chart.settingsCollapsed);
 
     const titleInput = card.querySelector('.chart-title-input');
     titleInput.value = chart.title;
+    card.querySelector('.chart-title').textContent = chart.title;
     titleInput.addEventListener('input', event => {
       chart.title = event.target.value || 'Untitled chart';
+      card.querySelector('.chart-title').textContent = chart.title;
     });
+    titleInput.addEventListener('blur', () => finishTitleEdit(card));
+    titleInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter') finishTitleEdit(card);
+      if (event.key === 'Escape') {
+        titleInput.value = chart.title;
+        finishTitleEdit(card);
+      }
+    });
+    card.querySelector('.edit-title').addEventListener('click', () => startTitleEdit(card));
 
     card.querySelector('.duplicate-chart').addEventListener('click', () => addChart(chart));
     card.querySelector('.collapse-chart').addEventListener('click', () => {
       chart.collapsed = !chart.collapsed;
       renderAllCharts();
     });
-    card.querySelector('.delete-chart').addEventListener('click', () => {
-      if (confirm(`Delete "${chart.title}"?`)) {
+    card.querySelector('.delete-chart').addEventListener('click', async () => {
+      if (await requestConfirmation(`Delete “${chart.title}”?`, 'This chart and its settings will be removed. Your dataset will not be changed.', 'Delete chart')) {
         if (chart.chartInstance) chart.chartInstance.destroy();
         state.charts = state.charts.filter(item => item.id !== chart.id);
         renderAllCharts();
+        showToast('Chart deleted.');
       }
     });
+    card.querySelector('.toggle-settings').addEventListener('click', () => {
+      chart.settingsCollapsed = !chart.settingsCollapsed;
+      card.classList.toggle('settings-collapsed', chart.settingsCollapsed);
+    });
+    card.querySelector('.expand-chart').addEventListener('click', () => toggleChartExpanded(card));
 
     populateColumnSelect(card.querySelector('.primary-column'), chart.primaryColumn, false);
     populateColumnSelect(card.querySelector('.compare-column'), chart.compareColumn, true);
@@ -335,6 +467,24 @@
     bindCheckbox(card, '.show-counts', chart, 'showCounts');
     bindCheckbox(card, '.show-percentages', chart, 'showPercentages');
     bindCheckbox(card, '.include-blanks', chart, 'includeBlanks');
+
+    const questionSearch = card.querySelector('.question-search');
+    questionSearch.addEventListener('input', event => {
+      filterColumnOptions(card.querySelector('.primary-column'), event.target.value, chart.primaryColumn, false);
+    });
+    card.querySelector('.compare-action').addEventListener('click', () => {
+      if (chart.settingsCollapsed) {
+        chart.settingsCollapsed = false;
+        card.classList.remove('settings-collapsed');
+      }
+      card.querySelector('.compare-column').focus();
+    });
+    card.querySelectorAll('.show-response-editor').forEach(button => button.addEventListener('click', () => {
+      card.querySelector('.response-tools').classList.remove('hidden');
+      button.closest('details').removeAttribute('open');
+      card.querySelector('.summary-table').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }));
+    card.querySelector('.close-response-editor').addEventListener('click', () => card.querySelector('.response-tools').classList.add('hidden'));
 
     card.querySelector('.summary-search').value = chart.summarySearch;
     card.querySelector('.summary-search').addEventListener('input', event => {
@@ -385,6 +535,7 @@
       chart.merges = [];
       chart.selectedResponses.clear();
       updateChartCard(chart, card);
+      showToast('Original responses restored.');
     });
 
     card.querySelector('.export-png').addEventListener('click', () => exportChartPng(chart));
@@ -415,7 +566,7 @@
 
   function populateColumnSelect(select, selectedValue, includeNone) {
     const options = includeNone ? ['<option value="">No comparison</option>'] : [];
-    options.push(...state.columns.map(column => `<option value="${escapeAttr(column)}">${escapeHtml(column)}</option>`));
+    options.push(...state.columns.map(column => `<option value="${escapeAttr(column)}">${escapeHtml(getColumnOptionLabel(column))}</option>`));
     select.innerHTML = options.join('');
     if (selectedValue && state.columns.includes(selectedValue)) select.value = selectedValue;
     else select.value = includeNone ? '' : (state.columns[0] || '');
@@ -429,9 +580,11 @@
     const isComparison = Boolean(chart.compareColumn);
     card.querySelectorAll('.single-setting').forEach(el => el.classList.toggle('hidden', isComparison));
     card.querySelectorAll('.compare-setting').forEach(el => el.classList.toggle('hidden', !isComparison));
-    card.querySelector('.collapse-chart').textContent = chart.collapsed ? 'Show' : 'Hide';
+    card.querySelector('.collapse-chart').textContent = chart.collapsed ? '+' : '−';
+    card.querySelector('.collapse-chart').setAttribute('aria-label', chart.collapsed ? 'Expand chart' : 'Collapse chart');
 
     renderFilters(chart, card);
+    renderActiveFilterChips(chart, card);
 
     const filteredRows = applyFilters(state.rows, chart.filters);
     card.querySelector('.row-count').textContent = `Showing ${formatNumber(filteredRows.length)} of ${formatNumber(state.rows.length)} rows`;
@@ -439,6 +592,16 @@
     const result = isComparison
       ? buildComparisonResult(filteredRows, chart)
       : buildSingleColumnResult(filteredRows, chart);
+
+    const validResponses = filteredRows.filter(row => getResponseLabel(row[chart.primaryColumn]) !== NO_RESPONSE).length;
+    const categoryTotal = result.type === 'single' ? result.items.length : result.labels.length;
+    card.querySelector('.valid-response-count').textContent = `${formatNumber(validResponses)} valid response${validResponses === 1 ? '' : 's'}`;
+    card.querySelector('.category-count').textContent = `${formatNumber(categoryTotal)} categor${categoryTotal === 1 ? 'y' : 'ies'}`;
+    const activeFilterCount = chart.filters.filter(filter => filter.selected.size).length;
+    card.querySelector('.analysis-summary').textContent = chart.compareColumn
+      ? `Compared by ${chart.compareColumn}${activeFilterCount ? ` · ${activeFilterCount} filter${activeFilterCount === 1 ? '' : 's'}` : ''}`
+      : (activeFilterCount ? `${activeFilterCount} active filter${activeFilterCount === 1 ? '' : 's'}` : 'No filters or comparison');
+    card.querySelector('.question-detail').textContent = getColumnOptionLabel(chart.primaryColumn, true);
 
     renderChart(chart, card, result);
     renderSummaryTable(chart, card, result);
@@ -498,6 +661,21 @@
 
       list.appendChild(filterCard);
     });
+  }
+
+  function renderActiveFilterChips(chart, card) {
+    const container = card.querySelector('.active-filters');
+    const activeFilters = chart.filters.filter(filter => filter.column && filter.selected.size);
+    container.innerHTML = activeFilters.map(filter => {
+      const selected = Array.from(filter.selected);
+      const preview = selected.slice(0, 3).join(', ');
+      const extra = selected.length > 3 ? ` +${selected.length - 3}` : '';
+      return `<div class="filter-chip"><span title="${escapeAttr(`${filter.column}: ${selected.join(', ')}`)}"><strong>${escapeHtml(filter.column)}:</strong> ${escapeHtml(preview)}${escapeHtml(extra)}</span><button type="button" data-filter-id="${escapeAttr(filter.id)}" aria-label="Remove ${escapeAttr(filter.column)} filter">×</button></div>`;
+    }).join('');
+    container.querySelectorAll('button[data-filter-id]').forEach(button => button.addEventListener('click', () => {
+      chart.filters = chart.filters.filter(filter => filter.id !== button.dataset.filterId);
+      renderAllCharts();
+    }));
   }
 
   function applyFilters(rows, filters) {
@@ -637,6 +815,12 @@
     chartArea.classList.toggle('hidden', tableOnly);
     if (!hasData || tableOnly) return;
 
+    const horizontal = result.type === 'single'
+      ? getResolvedChartType(chart, result) === 'horizontalBar'
+      : shouldUseHorizontalBars(result.labels);
+    const dynamicHeight = horizontal ? Math.min(760, Math.max(360, 150 + (result.labels.length * 46))) : 420;
+    chartArea.style.setProperty('--chart-height', `${dynamicHeight}px`);
+
     const context = canvas.getContext('2d');
     const config = result.type === 'comparison'
       ? getComparisonChartConfig(chart, result)
@@ -645,13 +829,14 @@
   }
 
   function getSingleChartConfig(chart, result) {
-    const type = chart.chartType === 'horizontalBar' ? 'bar' : chart.chartType;
+    const resolvedType = getResolvedChartType(chart, result);
+    const type = resolvedType === 'horizontalBar' ? 'bar' : resolvedType;
     const values = result.values;
 
     return {
       type,
       data: {
-        labels: result.labels,
+        labels: result.labels.map(label => truncateLabel(label)),
         datasets: [{
           label: 'Responses',
           data: values,
@@ -659,17 +844,18 @@
           borderColor: result.labels.map((_, index) => COLORS[index % COLORS.length]),
           borderWidth: 1,
           tension: 0.25,
-          fill: chart.chartType === 'line' ? false : true
+          fill: resolvedType === 'line' ? false : true
         }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        indexAxis: chart.chartType === 'horizontalBar' ? 'y' : 'x',
+        indexAxis: resolvedType === 'horizontalBar' ? 'y' : 'x',
         plugins: {
-          legend: { display: ['pie', 'doughnut'].includes(chart.chartType) },
+          legend: { display: ['pie', 'doughnut'].includes(resolvedType) },
           tooltip: {
             callbacks: {
+              title: items => items.length ? result.items[items[0].dataIndex].response : '',
               label: context => {
                 const item = result.items[context.dataIndex];
                 return `${item.response}: ${formatNumber(item.count)} (${item.rowPercent}%)`;
@@ -677,29 +863,29 @@
             }
           },
           datalabels: {
-            color: ['pie', 'doughnut'].includes(chart.chartType) ? '#ffffff' : '#1d2733',
-            anchor: ['pie', 'doughnut'].includes(chart.chartType) ? 'center' : 'end',
-            align: ['pie', 'doughnut'].includes(chart.chartType) ? 'center' : (type === 'line' ? 'top' : 'end'),
+            color: ['pie', 'doughnut'].includes(resolvedType) ? CHART_ON_COLOR : CHART_TEXT,
+            anchor: ['pie', 'doughnut'].includes(resolvedType) ? 'center' : 'end',
+            align: ['pie', 'doughnut'].includes(resolvedType) ? 'center' : (type === 'line' ? 'top' : 'end'),
             clamp: true,
             clip: false,
             textAlign: 'center',
             font: context => ({
               weight: '700',
-              size: ['pie', 'doughnut'].includes(chart.chartType) && context.dataset.data.length > 8 ? 10 : 11
+              size: ['pie', 'doughnut'].includes(resolvedType) && context.dataset.data.length > 8 ? 10 : 11
             }),
             formatter: (value, context) => {
               const item = result.items[context.dataIndex];
-              if (['pie', 'doughnut'].includes(chart.chartType) && item.rowPercent < 4) return '';
+              if (['pie', 'doughnut'].includes(resolvedType) && item.rowPercent < 4) return '';
               const parts = [];
               if (chart.showCounts) parts.push(formatNumber(value));
               if (chart.showPercentages) parts.push(`${item.rowPercent}%`);
-              return ['pie', 'doughnut'].includes(chart.chartType) ? parts.join('\n') : parts.join(' | ');
+              return ['pie', 'doughnut'].includes(resolvedType) ? parts.join('\n') : parts.join(' | ');
             }
           }
         },
-        scales: ['pie', 'doughnut'].includes(chart.chartType) ? {} : {
-          x: { beginAtZero: true },
-          y: { beginAtZero: true }
+        scales: ['pie', 'doughnut'].includes(resolvedType) ? {} : {
+          x: { beginAtZero: true, grid: { color: CHART_GRID } },
+          y: { beginAtZero: true, grid: { display: resolvedType !== 'horizontalBar', color: CHART_GRID } }
         }
       }
     };
@@ -707,39 +893,62 @@
 
   function getComparisonChartConfig(chart, result) {
     const stacked = chart.compareType === 'stacked' || chart.compareType === 'stacked100';
+    const horizontal = shouldUseHorizontalBars(result.labels);
     return {
       type: 'bar',
       data: {
-        labels: result.labels,
+        labels: result.labels.map(label => truncateLabel(label)),
         datasets: result.datasets
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        indexAxis: horizontal ? 'y' : 'x',
         plugins: {
           legend: { position: 'bottom' },
           tooltip: {
             callbacks: {
+              title: items => items.length ? result.labels[items[0].dataIndex] : '',
               label: context => `${context.dataset.label}: ${context.formattedValue}${result.valueMode === 'counts' ? '' : '%'}`
             }
           },
           datalabels: {
-            color: '#1d2733',
+            color: CHART_TEXT,
             anchor: 'end',
             align: 'end',
             formatter: value => value ? `${value}${result.valueMode === 'counts' ? '' : '%'}` : ''
           }
         },
         scales: {
-          x: { stacked },
+          x: {
+            stacked,
+            beginAtZero: true,
+            max: horizontal && (chart.compareType === 'stacked100' || result.valueMode !== 'counts') ? 100 : undefined,
+            grid: { color: CHART_GRID }
+          },
           y: {
             stacked,
             beginAtZero: true,
-            max: chart.compareType === 'stacked100' || result.valueMode !== 'counts' ? 100 : undefined
+            max: !horizontal && (chart.compareType === 'stacked100' || result.valueMode !== 'counts') ? 100 : undefined,
+            grid: { color: CHART_GRID }
           }
         }
       }
     };
+  }
+
+  function getResolvedChartType(chart, result) {
+    if (chart.chartType !== 'auto') return chart.chartType;
+    return shouldUseHorizontalBars(result.labels) ? 'horizontalBar' : 'bar';
+  }
+
+  function shouldUseHorizontalBars(labels) {
+    return labels.length > 5 || labels.some(label => String(label).length > 18);
+  }
+
+  function truncateLabel(label, maxLength = 34) {
+    const text = String(label);
+    return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
   }
 
   function renderSummaryTable(chart, card, result) {
@@ -894,13 +1103,14 @@
 
   function exportChartPng(chart) {
     if (!chart.chartInstance) {
-      alert('This chart is currently shown as a table only.');
+      showToast('This chart is currently shown as a table only.', 'warning');
       return;
     }
     const link = document.createElement('a');
     link.download = `${safeFileName(chart.title)}.png`;
     link.href = chart.chartInstance.toBase64Image('image/png', 1);
     link.click();
+    showToast('Chart PNG generated.');
   }
 
   function exportSummaryCsv(chart) {
@@ -925,12 +1135,14 @@
     }
 
     downloadCsv(csvRows, `${safeFileName(chart.title)}-summary.csv`);
+    showToast('Summary CSV generated.');
   }
 
   function exportFilteredDataCsv(chart) {
     const rows = applyFilters(state.rows, chart.filters);
     const csvRows = [state.columns, ...rows.map(row => state.columns.map(column => displayCell(row[column])))];
     downloadCsv(csvRows, `${safeFileName(chart.title)}-filtered-data.csv`);
+    showToast('Filtered data CSV generated.');
   }
 
   async function loadPublicGoogleSheet() {
@@ -941,7 +1153,8 @@
       return;
     }
 
-    showReportStatus('Loading public Google Sheet...', '');
+    showReportStatus('Loading public Google Sheet...', 'loading');
+    setButtonLoading(els.loadPublicSheetBtn, true, 'Loading…');
     try {
       const exportUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=xlsx`;
       const response = await fetch(exportUrl);
@@ -960,9 +1173,14 @@
       renderReportControls();
       showStatus('Public Google Sheet loaded. Your charts now use this data source.', '');
       showReportStatus('Public Google Sheet loaded. It is used only in this browser session.', '');
+      setActiveTab('charts');
+      showToast('Google Sheet loaded successfully.');
     } catch (error) {
       console.error(error);
       showReportStatus('Could not load that Google Sheet. Make sure it is public or shared with anyone who has the link.', 'error');
+      showToast('The Google Sheet could not be loaded.', 'error');
+    } finally {
+      setButtonLoading(els.loadPublicSheetBtn, false);
     }
   }
 
@@ -975,6 +1193,8 @@
       state.sources.push({ id, name, workbook });
     }
     state.reportResult = null;
+    state.previewSearch = '';
+    if (els.previewSearch) els.previewSearch.value = '';
   }
 
   function getSelectedReportSource() {
@@ -1017,7 +1237,7 @@
 
     const sheetNames = source.workbook.SheetNames;
     populateSelect(els.reportDataSheetSelect, sheetNames, pickDataSheet(sheetNames), false);
-    if (!normalizeValue(els.reportNameInput.value)) els.reportNameInput.value = 'Distribution';
+    if (!normalizeValue(els.reportNameInput.value)) els.reportNameInput.value = 'Question breakdown';
     renderReportColumns();
   }
 
@@ -1047,7 +1267,8 @@
     const defaultResponseColumns = responseColumns.filter(column => eligibleColumns.includes(column));
     renderCheckboxList(els.questionChecklist, eligibleColumns.map(column => ({ value: column, label: column })), {
       checkedValues: defaultResponseColumns.length ? defaultResponseColumns : eligibleColumns,
-      emptyText: 'No response columns found'
+      emptyText: 'No response columns found',
+      onChange: updateReportSelectionCount
     });
     populateSelect(els.primaryBreakdownSelect, eligibleColumns, '', true, 'No main breakdown');
     els.primaryBreakdownSelect.value = '';
@@ -1055,6 +1276,8 @@
     els.reportFilterColumnSelect.value = '';
     renderReportFilterValues();
     updateReportColumnNote(ignoredColumns, emptyColumns);
+    filterReportQuestions();
+    updateReportSelectionCount();
   }
 
   function renderReportFilterValues() {
@@ -1129,9 +1352,11 @@
       return;
     }
 
+    setButtonLoading(els.generateReportBtn, true, 'Generating…');
+    showReportStatus('Generating the breakdown report...', 'loading');
     try {
       const dataRows = getSheetRecords(source.workbook, els.reportDataSheetSelect.value);
-      const reportName = normalizeValue(els.reportNameInput.value) || 'Distribution';
+      const reportName = normalizeValue(els.reportNameInput.value) || 'Question breakdown';
       if (!dataRows.length) throw new Error('The raw data sheet has no rows.');
 
       const reportFilter = getReportFilter(dataRows);
@@ -1160,10 +1385,14 @@
         sourceName: source.name
       };
       renderDistributionOutput(state.reportResult);
-      showReportStatus('Distribution report generated.', '');
+      showReportStatus('Breakdown report generated.', '');
+      showToast('Breakdown report generated.');
     } catch (error) {
       console.error(error);
       showReportStatus(error.message || 'Could not generate the report.', 'error');
+      showToast(error.message || 'Could not generate the report.', 'error');
+    } finally {
+      setButtonLoading(els.generateReportBtn, false);
     }
   }
 
@@ -1351,32 +1580,37 @@
     if (cell.type === 'meta-label') return `<td${colspan} class="report-meta-label">${escapeHtml(cell.value)}</td>`;
     if (cell.type === 'meta-value') return `<td${colspan} class="report-meta-value">${escapeHtml(cell.value)}</td>`;
     if (cell.type === 'question') return `<td${colspan} class="question-title">${escapeHtml(cell.value)}</td>`;
-    if (cell.type === 'header') return `<td${colspan} class="report-header">${escapeHtml(cell.value)}</td>`;
-    if (cell.type === 'count') return `<td${colspan} class="number">${formatNumber(cell.value)}</td>`;
+    if (cell.type === 'header') {
+      const valueClass = cell.value === 'Count' ? ' report-count' : (cell.value === 'Percentage' ? ' report-percent' : '');
+      return `<td${colspan} class="report-header${valueClass}">${escapeHtml(cell.value)}</td>`;
+    }
+    if (cell.type === 'count') return `<td${colspan} class="number report-count">${formatNumber(cell.value)}</td>`;
     if (cell.type === 'percent') {
       const percent = Number(cell.value) || 0;
-      return `<td${colspan} class="number heat-cell" style="background:${getHeatColor(percent)}">${formatPercent(percent)}</td>`;
+      return `<td${colspan} class="number heat-cell report-percent" style="background:${getHeatColor(percent)}">${formatPercent(percent)}</td>`;
     }
     return `<td${colspan}>${escapeHtml(cell.value)}</td>`;
   }
 
   function downloadDistributionCsv() {
     if (!state.reportResult) {
-      alert('Generate a distribution report first.');
+      showToast('Generate a breakdown report first.', 'warning');
       return;
     }
     downloadCsv(state.reportResult.aoa.map(row => row.map(value => typeof value === 'number' ? value : displayCell(value))), `${safeFileName(state.reportResult.title)}.csv`);
+    showToast('Report CSV generated.');
   }
 
   function downloadDistributionXlsx() {
     if (!state.reportResult) {
-      alert('Generate a distribution report first.');
+      showToast('Generate a breakdown report first.', 'warning');
       return;
     }
     const workbook = XLSX.utils.book_new();
     const sheet = XLSX.utils.aoa_to_sheet(state.reportResult.aoa);
     XLSX.utils.book_append_sheet(workbook, sheet, safeSheetName(state.reportResult.title));
     XLSX.writeFile(workbook, `${safeFileName(state.reportResult.title)}.xlsx`);
+    showToast('Excel report generated.');
   }
 
   function downloadCsv(rows, fileName) {
@@ -1599,6 +1833,270 @@
     return (normalizeValue(value).replace(/[\\/?*:[\]]+/g, ' ').trim() || 'Distribution').slice(0, 31);
   }
 
+  function buildColumnStats(rows, columns) {
+    return new Map(columns.map(column => {
+      const values = rows.map(row => row[column]);
+      const normalized = values.map(normalizeValue);
+      const answered = normalized.filter(Boolean);
+      const uniqueCount = new Set(answered).size;
+      return [column, {
+        type: detectDataType(values),
+        answeredCount: answered.length,
+        uniqueCount,
+        missingCount: rows.length - answered.length
+      }];
+    }));
+  }
+
+  function detectDataType(values) {
+    const populated = values.filter(value => normalizeValue(value) !== '');
+    if (!populated.length) return 'Empty';
+    if (populated.every(value => value instanceof Date || /^\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(normalizeValue(value)))) return 'Date';
+    if (populated.every(value => !Number.isNaN(Number(normalizeValue(value))))) return 'Number';
+    if (populated.every(value => /^(true|false|yes|no)$/i.test(normalizeValue(value)))) return 'Boolean';
+    return 'Text';
+  }
+
+  function updateAnalysisColumns() {
+    const eligible = state.allColumns.filter(column => {
+      const stats = state.columnStats.get(column);
+      return stats && stats.uniqueCount > 0 && stats.uniqueCount <= REPORT_UNIQUE_VALUE_LIMIT && !state.hiddenAnalysisColumns.has(column);
+    });
+    state.columns = eligible;
+    state.rows = state.allRows.map(row => pickRecordColumns(row, eligible));
+    state.excludedChartColumns = state.allColumns.filter(column => !eligible.includes(column));
+  }
+
+  function getColumnOptionLabel(column, compact = false) {
+    const stats = state.columnStats.get(column);
+    if (!stats) return column || 'No question selected';
+    if (compact) return `${stats.type} · ${formatNumber(stats.answeredCount)} answered · ${formatNumber(stats.uniqueCount)} unique`;
+    return `${column} — ${stats.type} · ${formatNumber(stats.answeredCount)} answered · ${formatNumber(stats.uniqueCount)} unique`;
+  }
+
+  function filterColumnOptions(select, query, selectedValue, includeNone) {
+    const searchText = normalizeValue(query).toLowerCase();
+    const matching = state.columns.filter(column => !searchText || column.toLowerCase().includes(searchText));
+    if (selectedValue && state.columns.includes(selectedValue) && !matching.includes(selectedValue)) matching.unshift(selectedValue);
+    const options = includeNone ? ['<option value="">No comparison</option>'] : [];
+    options.push(...matching.map(column => `<option value="${escapeAttr(column)}">${escapeHtml(getColumnOptionLabel(column))}</option>`));
+    select.innerHTML = options.join('');
+    select.value = selectedValue && matching.includes(selectedValue) ? selectedValue : (includeNone ? '' : (matching[0] || ''));
+  }
+
+  function setActiveTab(tabName) {
+    if (!state.workbook || !state.allRows.length) return;
+    const panels = {
+      charts: els.dashboardSection,
+      report: document.getElementById('distributionSection'),
+      preview: els.dataPreviewSection
+    };
+    if (!panels[tabName]) return;
+    state.activeTab = tabName;
+    Object.entries(panels).forEach(([name, panel]) => panel.classList.toggle('hidden', name !== tabName));
+    els.tabButtons.forEach(button => {
+      const active = button.dataset.tab === tabName;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-selected', String(active));
+      button.tabIndex = active ? 0 : -1;
+    });
+    if (tabName === 'preview') renderDataPreview();
+  }
+
+  function showSheetPicker() {
+    if (!state.workbook || state.workbook.SheetNames.length <= 1) {
+      showToast('This dataset has only one sheet.', 'warning');
+      return;
+    }
+    els.sheetPickerWrap.classList.remove('hidden');
+    els.sheetSelect.focus();
+  }
+
+  function loadSampleData() {
+    const sampleRows = [
+      ['Region', 'Grade', 'Completed', 'Program rating', 'Would recommend', 'Support was helpful'],
+      ['North', '6', 'Yes', 'Excellent', 'Yes', 'Very Helpful'],
+      ['North', '7', 'Yes', 'Very Good', 'Yes', 'Helpful'],
+      ['South', '8', 'No', 'Good', 'Maybe', 'Somewhat helpful'],
+      ['East', '6', 'Yes', 'Excellent', 'Yes', 'Very Helpful'],
+      ['West', '7', 'Yes', 'Good', 'Yes', 'Helpful'],
+      ['South', '8', 'Yes', 'Fair', 'No', 'Somewhat helpful'],
+      ['East', '6', 'Yes', 'Very Good', 'Yes', 'Very Helpful'],
+      ['North', '7', 'No', 'Good', 'Maybe', 'Helpful'],
+      ['West', '8', 'Yes', 'Excellent', 'Yes', 'Very Helpful'],
+      ['South', '6', 'Yes', 'Very Good', 'Yes', 'Helpful'],
+      ['East', '7', 'Yes', 'Good', 'Yes', 'Somewhat helpful'],
+      ['West', '8', 'No', '', 'No', 'Not helpful']
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(sampleRows), 'Sample responses');
+    resetDataset();
+    upsertReportSource(UPLOADED_SOURCE_ID, 'Sample survey data', workbook);
+    activateWorkbook(workbook, 'Sample survey data', 'Sample responses');
+    showStatus('Sample data loaded. Explore the chart, report, and preview tabs.', '');
+    showToast('Sample survey data loaded.');
+  }
+
+  function renderDataPreview() {
+    if (!els.dataPreviewTable) return;
+    if (!state.allRows.length || !state.allColumns.length) {
+      els.previewStats.innerHTML = '';
+      els.columnProfiles.innerHTML = '<div class="checklist-empty">Load a dataset to inspect its columns.</div>';
+      els.dataPreviewTable.innerHTML = '<div class="report-empty"><strong>No data to preview.</strong></div>';
+      els.previewResultCount.textContent = 'Showing 0 rows';
+      return;
+    }
+
+    const searchText = state.previewSearch.trim().toLowerCase();
+    const matchingRows = state.allRows.filter(row => !searchText || state.allColumns.some(column => normalizeValue(row[column]).toLowerCase().includes(searchText)));
+    const visibleRows = matchingRows.slice(0, 100);
+    const missingCells = state.allColumns.reduce((sum, column) => sum + (state.columnStats.get(column)?.missingCount || 0), 0);
+    els.previewStats.innerHTML = [
+      ['Rows', formatNumber(state.allRows.length)],
+      ['Columns', formatNumber(state.allColumns.length)],
+      ['Usable questions', formatNumber(state.columns.length)],
+      ['Missing cells', formatNumber(missingCells)]
+    ].map(([label, value]) => `<div class="preview-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
+
+    els.columnProfiles.innerHTML = state.allColumns.map(column => {
+      const stats = state.columnStats.get(column);
+      const automaticallyExcluded = stats.uniqueCount === 0 || stats.uniqueCount > REPORT_UNIQUE_VALUE_LIMIT;
+      const inAnalysis = state.columns.includes(column);
+      return `<div class="column-profile"><strong title="${escapeAttr(column)}">${escapeHtml(column)}</strong><label title="${automaticallyExcluded ? 'Automatically excluded because it is empty or open-ended' : 'Show or hide this column in chart analysis'}"><input type="checkbox" data-analysis-column="${escapeAttr(column)}" aria-label="Analyze ${escapeAttr(column)}" ${inAnalysis ? 'checked' : ''} ${automaticallyExcluded ? 'disabled' : ''}> Analyze</label><small>${escapeHtml(stats.type)} · ${formatNumber(stats.uniqueCount)} unique · ${formatNumber(stats.missingCount)} missing${automaticallyExcluded ? ' · not chart-ready' : ''}</small></div>`;
+    }).join('');
+    els.columnProfiles.querySelectorAll('input[data-analysis-column]').forEach(input => input.addEventListener('change', () => {
+      if (input.checked) state.hiddenAnalysisColumns.delete(input.dataset.analysisColumn);
+      else state.hiddenAnalysisColumns.add(input.dataset.analysisColumn);
+      updateAnalysisColumns();
+      renderFileStats();
+      renderAllCharts();
+      renderDataPreview();
+      showToast(input.checked ? 'Column restored to chart analysis.' : 'Column hidden from chart analysis.');
+    }));
+
+    els.previewResultCount.textContent = `Showing ${formatNumber(visibleRows.length)} of ${formatNumber(matchingRows.length)} matching rows`;
+    els.dataPreviewTable.innerHTML = `<table><thead><tr><th>#</th>${state.allColumns.map(column => `<th title="${escapeAttr(column)}">${escapeHtml(truncateLabel(column, 42))}</th>`).join('')}</tr></thead><tbody>${visibleRows.map((row, index) => `<tr><td class="number">${index + 1}</td>${state.allColumns.map(column => {
+      const value = displayCell(row[column]);
+      return `<td title="${escapeAttr(value)}">${value ? escapeHtml(value) : '<span class="missing-value">Blank</span>'}</td>`;
+    }).join('')}</tr>`).join('') || `<tr><td colspan="${state.allColumns.length + 1}">No rows match your search.</td></tr>`}</tbody></table>`;
+  }
+
+  function filterReportQuestions() {
+    const searchText = normalizeValue(els.reportQuestionSearch.value).toLowerCase();
+    els.questionChecklist.querySelectorAll('label').forEach(label => {
+      label.classList.toggle('is-filtered-out', Boolean(searchText) && !label.textContent.toLowerCase().includes(searchText));
+    });
+    updateReportSelectionCount();
+  }
+
+  function setVisibleReportQuestions(checked) {
+    els.questionChecklist.querySelectorAll('label:not(.is-filtered-out) input[type="checkbox"]').forEach(input => {
+      input.checked = checked;
+    });
+    updateReportSelectionCount();
+  }
+
+  function updateReportSelectionCount() {
+    if (!els.selectedQuestionCount) return;
+    const count = els.questionChecklist.querySelectorAll('input[type="checkbox"]:checked').length;
+    els.selectedQuestionCount.textContent = `${count} question${count === 1 ? '' : 's'} selected`;
+  }
+
+  function setReportMode(mode) {
+    ['count', 'percentage', 'both'].forEach(value => els.distributionOutput.classList.toggle(`report-mode-${value}`, value === mode));
+    document.querySelectorAll('[data-report-mode]').forEach(button => button.classList.toggle('is-active', button.dataset.reportMode === mode));
+  }
+
+  function setReportDensity(density) {
+    ['compact', 'comfortable'].forEach(value => els.distributionOutput.classList.toggle(`density-${value}`, value === density));
+    document.querySelectorAll('[data-density]').forEach(button => button.classList.toggle('is-active', button.dataset.density === density));
+  }
+
+  function setReportZoom(value) {
+    state.reportZoom = Math.max(0.7, Math.min(1.4, Math.round(value * 10) / 10));
+    els.distributionOutput.style.setProperty('--report-zoom', state.reportZoom);
+    els.zoomValue.textContent = `${Math.round(state.reportZoom * 100)}%`;
+  }
+
+  function toggleReportFullscreen() {
+    const panel = els.distributionOutput.closest('.report-output-panel');
+    panel.classList.toggle('is-expanded');
+    document.body.classList.toggle('has-expanded-view', panel.classList.contains('is-expanded'));
+  }
+
+  function startTitleEdit(card) {
+    card.querySelector('.chart-title-row').classList.add('hidden');
+    const input = card.querySelector('.chart-title-input');
+    input.classList.remove('hidden');
+    input.focus();
+    input.select();
+  }
+
+  function finishTitleEdit(card) {
+    card.querySelector('.chart-title-input').classList.add('hidden');
+    card.querySelector('.chart-title-row').classList.remove('hidden');
+  }
+
+  function toggleChartExpanded(card) {
+    card.classList.toggle('is-expanded');
+    document.body.classList.toggle('has-expanded-view', card.classList.contains('is-expanded'));
+    card.querySelector('.chart-more-menu').removeAttribute('open');
+  }
+
+  function handleGlobalKeydown(event) {
+    if (event.key === 'Escape') {
+      const expandedChart = document.querySelector('.chart-card.is-expanded');
+      const expandedReport = document.querySelector('.report-output-panel.is-expanded');
+      if (expandedChart) toggleChartExpanded(expandedChart);
+      else if (expandedReport) toggleReportFullscreen();
+      document.querySelectorAll('.menu-details[open]').forEach(menu => menu.removeAttribute('open'));
+    }
+    if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && event.target.classList.contains('tab-button')) {
+      event.preventDefault();
+      const currentIndex = els.tabButtons.indexOf(event.target);
+      const direction = event.key === 'ArrowRight' ? 1 : -1;
+      const next = els.tabButtons[(currentIndex + direction + els.tabButtons.length) % els.tabButtons.length];
+      next.focus();
+      setActiveTab(next.dataset.tab);
+    }
+  }
+
+  function setButtonLoading(button, loading, loadingLabel = 'Working…') {
+    if (!button) return;
+    if (loading) {
+      if (!button.dataset.originalLabel) button.dataset.originalLabel = button.textContent;
+      button.textContent = loadingLabel;
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+    } else {
+      if (button.dataset.originalLabel) button.textContent = button.dataset.originalLabel;
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+    }
+  }
+
+  function showToast(message, type = '') {
+    if (!message) return;
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`.trim();
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    toast.textContent = message;
+    els.toastRegion.appendChild(toast);
+    window.setTimeout(() => toast.remove(), 4200);
+  }
+
+  function requestConfirmation(title, message, confirmLabel) {
+    if (!els.confirmDialog || typeof els.confirmDialog.showModal !== 'function') return Promise.resolve(window.confirm(`${title}\n\n${message}`));
+    els.confirmTitle.textContent = title;
+    els.confirmMessage.textContent = message;
+    els.confirmActionBtn.textContent = confirmLabel;
+    els.confirmDialog.returnValue = 'cancel';
+    els.confirmDialog.showModal();
+    return new Promise(resolve => {
+      els.confirmDialog.addEventListener('close', () => resolve(els.confirmDialog.returnValue === 'confirm'), { once: true });
+    });
+  }
+
   function showReportStatus(message, type) {
     els.reportStatus.textContent = message;
     els.reportStatus.className = `status-message ${type || ''}`.trim();
@@ -1622,10 +2120,10 @@
     els.chartGrid.innerHTML = '';
     els.fileStats.innerHTML = '';
     els.reportOutputTitle.textContent = 'No report generated yet';
-    els.reportOutputMeta.textContent = 'Select a source and generate a report.';
+    els.reportOutputMeta.textContent = 'Select questions and generate a breakdown report.';
     els.reportContextBar.classList.add('hidden');
     els.reportContextBar.innerHTML = '';
-    els.distributionOutput.innerHTML = '<div class="report-empty">Upload a workbook or load a public Google Sheet, then choose the input settings.</div>';
+    els.distributionOutput.innerHTML = '<div class="report-empty"><span class="empty-state-icon" aria-hidden="true">▦</span><strong>Select questions and generate a breakdown report.</strong><span>Your report preview will appear here.</span></div>';
     renderDataset();
   }
 

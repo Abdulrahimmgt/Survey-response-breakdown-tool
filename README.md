@@ -1,4 +1,4 @@
-# Survey Response Breakdown Tool
+# Survey Response Analyzer
 
 A static web app for analyzing Excel, CSV, and public Google Sheets survey-style data directly in the browser.
 
@@ -13,14 +13,16 @@ A static web app for analyzing Excel, CSV, and public Google Sheets survey-style
 - Compare one column against another.
 - Add one or more checklist filters.
 - Hide selected responses or manually combine similar response labels.
-- Generate sheet-style distribution reports from an uploaded workbook or public Google Sheet.
+- Navigate focused Charts, Question Breakdown Report, and Data Preview workspaces.
+- Generate sheet-style question breakdown reports from the active workbook or public Google Sheet.
+- Preview the first 100 rows, search the dataset, inspect column quality, and hide columns from chart analysis without changing the source.
 - Choose response columns to include with checked lists.
 - Optionally break those response columns down by one selected column.
-- Filter distribution reports by one selected column with fewer than 500 unique values.
-- View the generated distribution table in a fixed scrollable panel with percentage heat maps.
+- Filter breakdown reports by one selected column with fewer than 500 unique values.
+- View the generated breakdown table in a fixed scrollable panel with percentage heat maps.
 - Hide open-ended-style columns from report choices when they have more than 15 unique responses.
 - Export chart images, summary tables, and filtered data as CSV.
-- Export generated distribution reports as CSV or Excel.
+- Export generated breakdown reports as CSV or Excel.
 
 Uploaded files are processed only in your browser. The app does not use a backend, database, sign-in, API key, or paid service.
 
@@ -37,12 +39,12 @@ The app uses CDN links for:
 - Chart.js
 - Chart.js Data Labels plugin
 
-## Distribution Report mode
+## Question Breakdown Report
 
-The Distribution Report section appears below the chart maker. It can use:
+The Question Breakdown Report uses the currently active dataset. It can use:
 
 - The uploaded workbook.
-- A public Google Sheet link that can be opened without signing in. Loaded public sheets can also be charted and used for distribution reports.
+- A public Google Sheet link that can be opened without signing in. Loaded public sheets can also be charted and used for breakdown reports.
 
 For best results, include sheets like:
 
