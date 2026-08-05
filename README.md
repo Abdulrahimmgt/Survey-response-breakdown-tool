@@ -23,6 +23,9 @@ A static web app for analyzing Excel, CSV, and public Google Sheets survey-style
 - Hide open-ended-style columns from report choices when they have more than 15 unique responses.
 - Export chart images, summary tables, and filtered data as CSV.
 - Export generated breakdown reports as CSV or Excel.
+- Optionally link the active survey to another sheet or survey file using user-selected matching fields.
+- Review matched/unmatched rates, inspect duplicates, and view or download unmatched primary records.
+- Use any linked-survey question as a chart, filter, or report breakdown, including multi-select questions.
 
 Uploaded files are processed only in your browser. The app does not use a backend, database, sign-in, API key, or paid service.
 
@@ -53,6 +56,14 @@ For best results, include sheets like:
 Response-column choices appear checked by default so you can uncheck anything you do not want in the output. Columns with no responses or more than 15 unique responses are hidden from report choices so empty and open-ended questions do not create unusable breakdowns. The breakdown dropdown starts with no breakdown selected; when you choose one, that choice appears above the on-screen report. The report filter lets you select a column with fewer than 500 unique values, then uncheck values you want to exclude.
 
 Private Google Sheets are not connected in this version because that would require Google sign-in/API setup.
+
+## Linked survey analysis
+
+After loading a primary survey, open **Link a secondary survey**. The secondary survey can be another sheet in the active workbook or a separate Excel/CSV file. Select one matching field from each survey, review the match diagnostics, and then choose a secondary question for disaggregation.
+
+Matching ignores capitalization, surrounding whitespace, common punctuation, and spacing differences. Primary rows without a unique secondary match are reported and excluded only while linked analysis is active. Duplicate secondary keys are treated as ambiguous and are never selected automatically. Removing the link restores the original single-survey workflow.
+
+Multi-select secondary answers separated by commas, semicolons, pipes, or line breaks are expanded into category memberships. A primary response can therefore appear in more than one linked category. Linked reports include category-level matched-site and survey-response counts, and those rows are included in CSV and Excel report exports.
 
 ## Run locally
 

@@ -61,7 +61,15 @@
     reportResult: null,
     activeTab: 'charts',
     previewSearch: '',
-    reportZoom: 1
+    reportZoom: 1,
+    linkedSurvey: {
+      active: false,
+      secondaryWorkbook: null,
+      secondaryFileName: '',
+      result: null,
+      question: '',
+      column: ''
+    }
   };
 
   const els = {
@@ -124,7 +132,34 @@
     confirmDialog: document.getElementById('confirmDialog'),
     confirmTitle: document.getElementById('confirmTitle'),
     confirmMessage: document.getElementById('confirmMessage'),
-    confirmActionBtn: document.getElementById('confirmActionBtn')
+    confirmActionBtn: document.getElementById('confirmActionBtn'),
+    linkedSurveyPanel: document.getElementById('linkedSurveyPanel'),
+    toggleLinkedSurveyBtn: document.getElementById('toggleLinkedSurveyBtn'),
+    linkedSurveySetup: document.getElementById('linkedSurveySetup'),
+    linkHeadlineStatus: document.getElementById('linkHeadlineStatus'),
+    linkPrimaryName: document.getElementById('linkPrimaryName'),
+    linkPrimarySheet: document.getElementById('linkPrimarySheet'),
+    linkPrimaryField: document.getElementById('linkPrimaryField'),
+    linkSecondarySource: document.getElementById('linkSecondarySource'),
+    linkSecondaryFileWrap: document.getElementById('linkSecondaryFileWrap'),
+    linkSecondaryFile: document.getElementById('linkSecondaryFile'),
+    linkSecondaryFileName: document.getElementById('linkSecondaryFileName'),
+    linkSecondarySheet: document.getElementById('linkSecondarySheet'),
+    linkSecondaryField: document.getElementById('linkSecondaryField'),
+    linkQuestion: document.getElementById('linkQuestion'),
+    createSurveyLinkBtn: document.getElementById('createSurveyLinkBtn'),
+    clearSurveyLinkBtn: document.getElementById('clearSurveyLinkBtn'),
+    linkValidation: document.getElementById('linkValidation'),
+    linkStatusSummary: document.getElementById('linkStatusSummary'),
+    linkWarnings: document.getElementById('linkWarnings'),
+    linkDiagnosticActions: document.getElementById('linkDiagnosticActions'),
+    viewUnmatchedBtn: document.getElementById('viewUnmatchedBtn'),
+    downloadUnmatchedBtn: document.getElementById('downloadUnmatchedBtn'),
+    viewDuplicatesBtn: document.getElementById('viewDuplicatesBtn'),
+    linkDetailsDialog: document.getElementById('linkDetailsDialog'),
+    linkDetailsTitle: document.getElementById('linkDetailsTitle'),
+    linkDetailsBody: document.getElementById('linkDetailsBody'),
+    closeLinkDetailsBtn: document.getElementById('closeLinkDetailsBtn')
   };
 
   Chart.register(ChartDataLabels);
@@ -167,6 +202,28 @@
   els.zoomOutBtn.addEventListener('click', () => setReportZoom(state.reportZoom - 0.1));
   els.zoomInBtn.addEventListener('click', () => setReportZoom(state.reportZoom + 0.1));
   els.fullscreenReportBtn.addEventListener('click', toggleReportFullscreen);
+  els.toggleLinkedSurveyBtn.addEventListener('click', toggleLinkedSurveySetup);
+  els.linkSecondarySource.addEventListener('change', () => {
+    clearSurveyLink(false);
+    renderLinkedSurveySource();
+  });
+  els.linkSecondaryFile.addEventListener('change', loadSecondarySurveyFile);
+  els.linkPrimaryField.addEventListener('change', () => clearSurveyLink(false));
+  els.linkSecondarySheet.addEventListener('change', () => {
+    clearSurveyLink(false);
+    renderLinkedSurveyFields();
+  });
+  els.linkSecondaryField.addEventListener('change', () => {
+    clearSurveyLink(false);
+    renderLinkedSurveyFields();
+  });
+  els.createSurveyLinkBtn.addEventListener('click', createSurveyLink);
+  els.clearSurveyLinkBtn.addEventListener('click', () => clearSurveyLink(true));
+  els.linkQuestion.addEventListener('change', applyLinkedQuestion);
+  els.viewUnmatchedBtn.addEventListener('click', showUnmatchedRecords);
+  els.downloadUnmatchedBtn.addEventListener('click', downloadUnmatchedRecords);
+  els.viewDuplicatesBtn.addEventListener('click', showDuplicateValues);
+  els.closeLinkDetailsBtn.addEventListener('click', () => els.linkDetailsDialog.close());
 
   ['dragenter', 'dragover'].forEach(type => els.fileDrop.addEventListener(type, event => {
     event.preventDefault();
@@ -266,6 +323,9 @@
     state.columnStats = new Map();
     state.rawColumnCount = 0;
     state.excludedChartColumns = [];
+    const hadLinkedSurvey = Boolean(state.linkedSurvey.result);
+    resetLinkedSurveyMatch();
+    if (hadLinkedSurvey) invalidateGeneratedReport();
 
     if (!rawRows.length) {
       renderDataset();
@@ -331,6 +391,7 @@
     renderAllCharts();
     renderReportControls();
     renderDataPreview();
+    renderLinkedSurveyPanel();
   }
 
   function renderFileStats() {
@@ -683,8 +744,7 @@
     if (!activeFilters.length) return rows;
 
     return rows.filter(row => activeFilters.every(filter => {
-      const value = getResponseLabel(row[filter.column]);
-      return filter.selected.has(value);
+      return getResponseLabels(row[filter.column]).some(value => filter.selected.has(value));
     }));
   }
 
@@ -693,12 +753,14 @@
     let nonBlank = 0;
 
     rows.forEach(row => {
-      const originalLabel = getResponseLabel(row[chart.primaryColumn]);
-      if (originalLabel !== NO_RESPONSE) nonBlank += 1;
-      if (!chart.includeBlanks && originalLabel === NO_RESPONSE) return;
-      const label = getMergedLabel(originalLabel, chart.merges);
-      if (chart.hiddenResponses.has(label)) return;
-      counts.set(label, (counts.get(label) || 0) + 1);
+      const originalLabels = getResponseLabels(row[chart.primaryColumn]);
+      if (originalLabels.some(label => label !== NO_RESPONSE)) nonBlank += 1;
+      originalLabels.forEach(originalLabel => {
+        if (!chart.includeBlanks && originalLabel === NO_RESPONSE) return;
+        const label = getMergedLabel(originalLabel, chart.merges);
+        if (chart.hiddenResponses.has(label)) return;
+        counts.set(label, (counts.get(label) || 0) + 1);
+      });
     });
 
     let items = Array.from(counts, ([response, count]) => ({
@@ -726,14 +788,16 @@
     let total = 0;
 
     rows.forEach(row => {
-      const primary = getMergedLabel(getResponseLabel(row[chart.primaryColumn]), chart.merges);
-      const comparison = getResponseLabel(row[chart.compareColumn]);
-      if (!chart.includeBlanks && (primary === NO_RESPONSE || comparison === NO_RESPONSE)) return;
-      if (chart.hiddenResponses.has(primary)) return;
-      if (!matrix.has(primary)) matrix.set(primary, new Map());
-      matrix.get(primary).set(comparison, (matrix.get(primary).get(comparison) || 0) + 1);
-      comparisonLabels.add(comparison);
-      total += 1;
+      const primaries = getResponseLabels(row[chart.primaryColumn]).map(label => getMergedLabel(label, chart.merges));
+      const comparisons = getResponseLabels(row[chart.compareColumn]);
+      primaries.forEach(primary => comparisons.forEach(comparison => {
+        if (!chart.includeBlanks && (primary === NO_RESPONSE || comparison === NO_RESPONSE)) return;
+        if (chart.hiddenResponses.has(primary)) return;
+        if (!matrix.has(primary)) matrix.set(primary, new Map());
+        matrix.get(primary).set(comparison, (matrix.get(primary).get(comparison) || 0) + 1);
+        comparisonLabels.add(comparison);
+        total += 1;
+      }));
     });
 
     const rawPrimaryLabels = Array.from(matrix.keys());
@@ -1075,8 +1139,16 @@
   }
 
   function getUniqueValues(rows, column) {
-    return Array.from(new Set(rows.map(row => getResponseLabel(row[column]))))
+    return Array.from(new Set(rows.flatMap(row => getResponseLabels(row[column]))))
       .sort((a, b) => a.localeCompare(b));
+  }
+
+  function getResponseLabels(value) {
+    if (Array.isArray(value)) {
+      const labels = value.map(getResponseLabel).filter(label => label !== NO_RESPONSE);
+      return labels.length ? Array.from(new Set(labels)) : [NO_RESPONSE];
+    }
+    return [getResponseLabel(value)];
   }
 
   function getResponseLabel(value) {
@@ -1091,12 +1163,14 @@
 
   function normalizeValue(value) {
     if (value === null || value === undefined) return '';
+    if (Array.isArray(value)) return value.map(normalizeValue).filter(Boolean).join('; ');
     if (value instanceof Date) return value.toLocaleDateString();
     if (typeof value === 'string') return value.trim();
     return String(value).trim();
   }
 
   function displayCell(value) {
+    if (Array.isArray(value)) return value.map(displayCell).filter(Boolean).join('; ');
     const normalized = normalizeValue(value);
     return normalized === '' ? '' : normalized;
   }
@@ -1143,6 +1217,267 @@
     const csvRows = [state.columns, ...rows.map(row => state.columns.map(column => displayCell(row[column])))];
     downloadCsv(csvRows, `${safeFileName(chart.title)}-filtered-data.csv`);
     showToast('Filtered data CSV generated.');
+  }
+
+  function toggleLinkedSurveySetup() {
+    const opening = els.linkedSurveySetup.classList.contains('hidden');
+    els.linkedSurveySetup.classList.toggle('hidden', !opening);
+    els.toggleLinkedSurveyBtn.setAttribute('aria-expanded', String(opening));
+    els.toggleLinkedSurveyBtn.textContent = opening ? 'Hide setup' : (state.linkedSurvey.active ? 'Edit link' : 'Set up link');
+    if (opening) renderLinkedSurveyPanel();
+  }
+
+  function renderLinkedSurveyPanel() {
+    if (!els.linkedSurveyPanel) return;
+    const hasDataset = Boolean(state.workbook && state.allRows.length);
+    els.linkedSurveyPanel.classList.toggle('hidden', !hasDataset);
+    if (!hasDataset) return;
+
+    els.linkPrimaryName.textContent = state.fileName || 'Active dataset';
+    els.linkPrimarySheet.textContent = state.sheetName || 'No sheet selected';
+    populateSelect(els.linkPrimaryField, state.allColumns, els.linkPrimaryField.value || pickLinkField(state.allColumns), false);
+    els.toggleLinkedSurveyBtn.textContent = els.linkedSurveySetup.classList.contains('hidden')
+      ? (state.linkedSurvey.active ? 'Edit link' : 'Set up link')
+      : 'Hide setup';
+    renderLinkedSurveySource();
+    renderLinkDiagnostics();
+  }
+
+  function getSecondaryWorkbook() {
+    return els.linkSecondarySource.value === 'file' ? state.linkedSurvey.secondaryWorkbook : state.workbook;
+  }
+
+  function renderLinkedSurveySource() {
+    if (!state.workbook) return;
+    const fileMode = els.linkSecondarySource.value === 'file';
+    els.linkSecondaryFileWrap.classList.toggle('hidden', !fileMode);
+    els.linkSecondaryFileName.textContent = fileMode
+      ? (state.linkedSurvey.secondaryFileName || 'Choose an Excel or CSV file to continue.')
+      : 'Using another sheet from the active workbook.';
+    const workbook = getSecondaryWorkbook();
+    const sheetNames = workbook
+      ? workbook.SheetNames.filter(name => fileMode || name !== state.sheetName)
+      : [];
+    populateSelect(els.linkSecondarySheet, sheetNames, els.linkSecondarySheet.value, false);
+    if (!sheetNames.length) els.linkSecondarySheet.innerHTML = `<option value="">${fileMode ? 'Upload a secondary file' : 'No other sheets available'}</option>`;
+    renderLinkedSurveyFields();
+  }
+
+  async function loadSecondarySurveyFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const extension = file.name.split('.').pop().toLowerCase();
+    if (!['xlsx', 'xls', 'csv'].includes(extension)) {
+      showLinkValidation('Please choose an .xlsx, .xls, or .csv file.', 'error');
+      return;
+    }
+    showLinkValidation('Reading the secondary survey...', 'loading');
+    try {
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true, raw: false });
+      if (!workbook.SheetNames.length) throw new Error('No sheets were found in the secondary file.');
+      clearSurveyLink(false);
+      state.linkedSurvey.secondaryWorkbook = workbook;
+      state.linkedSurvey.secondaryFileName = file.name;
+      renderLinkedSurveySource();
+      showLinkValidation('Secondary survey loaded. Select matching fields, then match the surveys.', '');
+    } catch (error) {
+      console.error(error);
+      state.linkedSurvey.secondaryWorkbook = null;
+      state.linkedSurvey.secondaryFileName = '';
+      renderLinkedSurveySource();
+      showLinkValidation(error.message || 'The secondary survey could not be opened.', 'error');
+    }
+  }
+
+  function renderLinkedSurveyFields() {
+    const workbook = getSecondaryWorkbook();
+    const sheetName = els.linkSecondarySheet.value;
+    const columns = workbook && sheetName ? getSheetColumns(workbook, sheetName) : [];
+    populateSelect(els.linkSecondaryField, columns, els.linkSecondaryField.value || pickLinkField(columns), false);
+    const selectedQuestion = state.linkedSurvey.question;
+    const questions = columns.filter(column => column !== els.linkSecondaryField.value);
+    populateSelect(els.linkQuestion, questions, selectedQuestion, true, state.linkedSurvey.result ? 'Select a secondary question' : 'Match surveys first');
+    if (!state.linkedSurvey.active || !selectedQuestion) els.linkQuestion.value = '';
+    els.linkQuestion.disabled = !state.linkedSurvey.active;
+  }
+
+  function createSurveyLink() {
+    const workbook = getSecondaryWorkbook();
+    const secondarySheet = els.linkSecondarySheet.value;
+    const primaryField = els.linkPrimaryField.value;
+    const secondaryField = els.linkSecondaryField.value;
+    if (!primaryField || !secondaryField) {
+      showLinkValidation('Select a matching field from both surveys.', 'error');
+      return;
+    }
+    if (!workbook || !secondarySheet) {
+      showLinkValidation('Select or upload a secondary survey and choose its sheet.', 'error');
+      return;
+    }
+
+    try {
+      const secondaryRows = getSheetRecords(workbook, secondarySheet);
+      if (!secondaryRows.length) throw new Error('The selected secondary sheet has no usable rows.');
+      const result = LinkedSurvey.analyzeLink(state.allRows, secondaryRows, primaryField, secondaryField);
+      resetLinkedSurveyMatch();
+      state.linkedSurvey.result = result;
+      state.linkedSurvey.active = result.stats.matchedRows > 0;
+      invalidateGeneratedReport();
+      if (!result.stats.matchedRows) {
+        showLinkValidation('No rows matched. Review the selected fields and unmatched records; the existing single-survey analysis remains active.', 'error');
+      } else {
+        showLinkValidation(`${formatNumber(result.stats.matchedRows)} primary rows matched. Select a secondary question to add the linked breakdown.`, result.stats.unmatchedRows ? 'warning' : '');
+      }
+      updateAnalysisColumns();
+      renderLinkedSurveyFields();
+      renderLinkDiagnostics();
+      renderFileStats();
+      renderAllCharts();
+      renderReportColumns();
+      els.clearSurveyLinkBtn.classList.toggle('hidden', !state.linkedSurvey.active && !state.linkedSurvey.result);
+    } catch (error) {
+      console.error(error);
+      showLinkValidation(error.message || 'The surveys could not be matched.', 'error');
+    }
+  }
+
+  function applyLinkedQuestion() {
+    if (!state.linkedSurvey.active || !state.linkedSurvey.result) {
+      showLinkValidation('Match the surveys before selecting a secondary question.', 'error');
+      return;
+    }
+    const previousColumn = state.linkedSurvey.column;
+    if (previousColumn) state.columnStats.delete(previousColumn);
+    state.linkedSurvey.question = els.linkQuestion.value;
+    state.linkedSurvey.column = '';
+    try {
+      updateAnalysisColumns();
+      invalidateGeneratedReport();
+      renderFileStats();
+      renderAllCharts();
+      renderReportColumns();
+      if (state.linkedSurvey.question) {
+        showLinkValidation(`Linked breakdown ready: ${state.linkedSurvey.question}`, '');
+        showToast('Linked survey breakdown added to charts and reports.');
+      } else {
+        showLinkValidation('Surveys are matched. Select a secondary question to add a breakdown.', '');
+      }
+    } catch (error) {
+      console.error(error);
+      state.linkedSurvey.question = '';
+      state.linkedSurvey.column = '';
+      updateAnalysisColumns();
+      showLinkValidation(error.message || 'The secondary question could not be applied.', 'error');
+    }
+  }
+
+  function resetLinkedSurveyMatch() {
+    const linked = state.linkedSurvey;
+    if (!linked) return;
+    if (linked.column) state.columnStats.delete(linked.column);
+    linked.active = false;
+    linked.result = null;
+    linked.question = '';
+    linked.column = '';
+  }
+
+  function clearSurveyLink(announce) {
+    const hadLink = Boolean(state.linkedSurvey.result);
+    resetLinkedSurveyMatch();
+    if (hadLink) invalidateGeneratedReport();
+    if (state.allRows.length) {
+      updateAnalysisColumns();
+      renderFileStats();
+      renderAllCharts();
+      renderReportColumns();
+    }
+    renderLinkedSurveyFields();
+    renderLinkDiagnostics();
+    showLinkValidation(announce ? 'Linked survey removed. The original single-survey analysis is active.' : '', '');
+    if (announce) showToast('Linked survey removed.');
+  }
+
+  function renderLinkDiagnostics() {
+    const result = state.linkedSurvey.result;
+    els.clearSurveyLinkBtn.classList.toggle('hidden', !result);
+    els.linkStatusSummary.classList.toggle('hidden', !result);
+    els.linkDiagnosticActions.classList.toggle('hidden', !result);
+    if (!result) {
+      els.linkHeadlineStatus.classList.add('hidden');
+      els.linkHeadlineStatus.textContent = '';
+      els.linkStatusSummary.innerHTML = '';
+      els.linkWarnings.classList.add('hidden');
+      els.linkWarnings.innerHTML = '';
+      return;
+    }
+    const stats = result.stats;
+    els.linkHeadlineStatus.classList.remove('hidden');
+    els.linkHeadlineStatus.classList.toggle('is-warning', stats.unmatchedRows > 0 || result.duplicates.secondary.length > 0);
+    els.linkHeadlineStatus.textContent = `${formatNumber(stats.matchedRows)} matched · ${formatNumber(stats.unmatchedRows)} unmatched`;
+    const values = [
+      ['Primary rows', formatNumber(stats.totalPrimaryRows), false],
+      ['Secondary rows', formatNumber(stats.totalSecondaryRows), false],
+      ['Matched rows', formatNumber(stats.matchedRows), false],
+      ['Unmatched rows', formatNumber(stats.unmatchedRows), stats.unmatchedRows > 0],
+      ['Match rate', `${roundOne(stats.matchRate)}%`, false],
+      ['Unmatched rate', `${roundOne(stats.unmatchedRate)}%`, stats.unmatchedRows > 0]
+    ];
+    els.linkStatusSummary.innerHTML = values.map(([label, value, warning]) => `<div class="link-status-stat${warning ? ' is-warning' : ''}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
+
+    const warnings = [];
+    if (stats.unmatchedRows) warnings.push(`${formatNumber(stats.unmatchedRows)} primary row${stats.unmatchedRows === 1 ? '' : 's'} will be excluded from linked analysis.`);
+    if (result.duplicates.primary.length) warnings.push(`${formatNumber(result.duplicates.primary.length)} repeated primary matching value${result.duplicates.primary.length === 1 ? '' : 's'} found. This can be expected when multiple responses belong to one site.`);
+    if (result.duplicates.secondary.length) warnings.push(`${formatNumber(result.duplicates.secondary.length)} duplicate secondary matching value${result.duplicates.secondary.length === 1 ? '' : 's'} found. Those ambiguous matches are excluded.`);
+    els.linkWarnings.classList.toggle('hidden', !warnings.length);
+    els.linkWarnings.innerHTML = warnings.length ? `<strong>Review matching issues</strong><ul>${warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join('')}</ul>` : '';
+    els.viewUnmatchedBtn.disabled = !result.unmatched.length;
+    els.downloadUnmatchedBtn.disabled = !result.unmatched.length;
+    els.viewDuplicatesBtn.disabled = !result.duplicates.primary.length && !result.duplicates.secondary.length;
+  }
+
+  function showLinkValidation(message, type) {
+    els.linkValidation.textContent = message;
+    els.linkValidation.className = `status-message ${type || ''}`.trim();
+  }
+
+  function invalidateGeneratedReport() {
+    state.reportResult = null;
+    els.reportOutputTitle.textContent = 'No report generated yet';
+    els.reportOutputMeta.textContent = 'Select questions and generate a breakdown report.';
+    els.reportContextBar.classList.add('hidden');
+    els.reportContextBar.innerHTML = '';
+    els.distributionOutput.innerHTML = '<div class="report-empty"><span class="empty-state-icon" aria-hidden="true">▦</span><strong>Select questions and generate a breakdown report.</strong><span>Your report preview will appear here.</span></div>';
+  }
+
+  function showUnmatchedRecords() {
+    const result = state.linkedSurvey.result;
+    if (!result || !result.unmatched.length) return;
+    els.linkDetailsTitle.textContent = 'Unmatched primary records';
+    const columns = state.allColumns;
+    els.linkDetailsBody.innerHTML = `<table><thead><tr><th>Source row</th><th>Issue</th>${columns.map(column => `<th>${escapeHtml(column)}</th>`).join('')}</tr></thead><tbody>${result.unmatched.map(item => `<tr><td class="number">${item.rowNumber}</td><td>${escapeHtml(item.reason)}</td>${columns.map(column => `<td>${escapeHtml(displayCell(item.row[column]))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    els.linkDetailsDialog.showModal();
+  }
+
+  function downloadUnmatchedRecords() {
+    const result = state.linkedSurvey.result;
+    if (!result || !result.unmatched.length) return;
+    const rows = [['Source row', 'Matching value', 'Issue', ...state.allColumns]];
+    result.unmatched.forEach(item => rows.push([item.rowNumber, item.value, item.reason, ...state.allColumns.map(column => displayCell(item.row[column]))]));
+    downloadCsv(rows, `${safeFileName(state.fileName)}-unmatched-records.csv`);
+    showToast('Unmatched records CSV generated.');
+  }
+
+  function showDuplicateValues() {
+    const result = state.linkedSurvey.result;
+    if (!result) return;
+    const groups = [
+      ...result.duplicates.primary.map(item => ({ survey: 'Primary', ...item })),
+      ...result.duplicates.secondary.map(item => ({ survey: 'Secondary', ...item }))
+    ];
+    if (!groups.length) return;
+    els.linkDetailsTitle.textContent = 'Duplicate matching values';
+    els.linkDetailsBody.innerHTML = `<table><thead><tr><th>Survey</th><th>Matching value</th><th>Occurrences</th><th>Source rows</th><th>Effect</th></tr></thead><tbody>${groups.map(item => `<tr><td>${escapeHtml(item.survey)}</td><td>${escapeHtml(item.value)}</td><td class="number">${item.count}</td><td>${escapeHtml(item.rowNumbers.join(', '))}</td><td>${item.survey === 'Secondary' ? 'Excluded as ambiguous' : 'Matched as repeated responses'}</td></tr>`).join('')}</tbody></table>`;
+    els.linkDetailsDialog.showModal();
   }
 
   async function loadPublicGoogleSheet() {
@@ -1244,8 +1579,9 @@
   function renderReportColumns() {
     const source = getSelectedReportSource();
     const sheetName = els.reportDataSheetSelect.value;
-    const columns = source && sheetName ? getSheetColumns(source.workbook, sheetName) : [];
-    const dataRows = source && sheetName ? getSheetRecords(source.workbook, sheetName) : [];
+    const primaryColumns = source && sheetName ? getSheetColumns(source.workbook, sheetName) : [];
+    const dataRows = source && sheetName ? getReportDataRows(source, sheetName) : [];
+    const columns = dataRows.length ? Object.keys(dataRows[0]).filter(column => !column.startsWith('__')) : primaryColumns;
     const columnStats = columns.map(column => ({
       column,
       uniqueCount: getReportUniqueValues(dataRows, column).length
@@ -1258,20 +1594,23 @@
     const eligibleColumns = columnStats
       .filter(item => item.uniqueCount > 0 && item.uniqueCount <= REPORT_UNIQUE_VALUE_LIMIT)
       .map(item => item.column);
+    const linkedColumn = isLinkedReportContext(source, sheetName) ? state.linkedSurvey.column : '';
+    const eligibleBreakdownColumns = uniqueList([...eligibleColumns, linkedColumn].filter(Boolean));
+    const eligibleQuestionColumns = eligibleColumns.filter(column => column !== linkedColumn);
     const eligibleFilterColumns = filterColumnStats
       .filter(item => item.nonBlankUniqueCount > 0 && item.uniqueCount > 0 && item.uniqueCount < REPORT_FILTER_UNIQUE_VALUE_LIMIT)
       .map(item => item.column);
     const emptyColumns = columnStats.filter(item => item.uniqueCount === 0);
     const ignoredColumns = columnStats.filter(item => item.uniqueCount > REPORT_UNIQUE_VALUE_LIMIT);
-    const responseColumns = columns.filter(column => !isLikelyMetadataColumn(column));
-    const defaultResponseColumns = responseColumns.filter(column => eligibleColumns.includes(column));
-    renderCheckboxList(els.questionChecklist, eligibleColumns.map(column => ({ value: column, label: column })), {
-      checkedValues: defaultResponseColumns.length ? defaultResponseColumns : eligibleColumns,
+    const responseColumns = primaryColumns.filter(column => !isLikelyMetadataColumn(column));
+    const defaultResponseColumns = responseColumns.filter(column => eligibleQuestionColumns.includes(column));
+    renderCheckboxList(els.questionChecklist, eligibleQuestionColumns.map(column => ({ value: column, label: column })), {
+      checkedValues: defaultResponseColumns.length ? defaultResponseColumns : eligibleQuestionColumns,
       emptyText: 'No response columns found',
       onChange: updateReportSelectionCount
     });
-    populateSelect(els.primaryBreakdownSelect, eligibleColumns, '', true, 'No main breakdown');
-    els.primaryBreakdownSelect.value = '';
+    populateSelect(els.primaryBreakdownSelect, eligibleBreakdownColumns, linkedColumn, true, 'No main breakdown');
+    els.primaryBreakdownSelect.value = linkedColumn || '';
     populateSelect(els.reportFilterColumnSelect, eligibleFilterColumns, '', true, 'No filter');
     els.reportFilterColumnSelect.value = '';
     renderReportFilterValues();
@@ -1284,7 +1623,7 @@
     const source = getSelectedReportSource();
     const sheetName = els.reportDataSheetSelect.value;
     const filterColumn = els.reportFilterColumnSelect.value;
-    const dataRows = source && sheetName ? getSheetRecords(source.workbook, sheetName) : [];
+    const dataRows = source && sheetName ? getReportDataRows(source, sheetName) : [];
 
     if (!filterColumn || !dataRows.length) {
       renderCheckboxList(els.reportFilterValues, [], { emptyText: 'No filter values found' });
@@ -1355,7 +1694,7 @@
     setButtonLoading(els.generateReportBtn, true, 'Generating…');
     showReportStatus('Generating the breakdown report...', 'loading');
     try {
-      const dataRows = getSheetRecords(source.workbook, els.reportDataSheetSelect.value);
+      const dataRows = getReportDataRows(source, els.reportDataSheetSelect.value);
       const reportName = normalizeValue(els.reportNameInput.value) || 'Question breakdown';
       if (!dataRows.length) throw new Error('The raw data sheet has no rows.');
 
@@ -1374,15 +1713,22 @@
       if (!questions.length) throw new Error('Select at least one response column to include.');
 
       const output = buildDistributionOutput(filteredRows, questions, breakdownColumns, reportFilter.label);
+      const linkedSummary = state.linkedSurvey.column && breakdownColumns.includes(state.linkedSurvey.column)
+        ? LinkedSurvey.buildCategorySummary(filteredRows, state.linkedSurvey.column)
+        : [];
+      const linkedSummaryRows = linkedSummary.length
+        ? [['Linked category coverage'], ['Category', 'Matched sites', 'Survey responses'], ...linkedSummary.map(item => [item.category, item.matchedSites, item.surveyResponses]), []]
+        : [];
       state.reportResult = {
         title: reportName,
-        aoa: output.aoa,
+        aoa: [...linkedSummaryRows, ...output.aoa],
         rows: output.rows,
         skipped: output.skipped,
         questionCount: output.questionCount,
         breakdownLabel: output.breakdownLabel,
         filterLabel: output.filterLabel,
-        sourceName: source.name
+        sourceName: source.name,
+        linkedSummary
       };
       renderDistributionOutput(state.reportResult);
       showReportStatus('Breakdown report generated.', '');
@@ -1419,7 +1765,7 @@
   function applyReportFilter(dataRows, filter) {
     if (!filter.column) return dataRows;
     if (!filter.values.size) return [];
-    return dataRows.filter(row => filter.values.has(normalizeForMatch(getResponseLabel(row[filter.column]))));
+    return dataRows.filter(row => getResponseLabels(row[filter.column]).some(value => filter.values.has(normalizeForMatch(value))));
   }
 
   function buildDistributionOutput(dataRows, questions, breakdownColumns, filterLabel = 'All rows') {
@@ -1468,7 +1814,7 @@
       renderedRow[0] = { value: answer, type: 'answer' };
 
       combos.forEach((combo, comboIndex) => {
-        const filtered = dataRows.filter(dataRow => combo.conditions.every(condition => getReportValue(dataRow[condition.column]) === condition.value));
+        const filtered = dataRows.filter(dataRow => combo.conditions.every(condition => getReportValues(dataRow[condition.column]).includes(condition.value)));
         const counts = countAnswers(filtered, questionColumn);
         const total = Array.from(counts.values()).reduce((sum, count) => sum + count, 0);
         const count = counts.get(normalizeForMatch(answer)) || 0;
@@ -1529,10 +1875,10 @@
   function countAnswers(rows, questionColumn) {
     const counts = new Map();
     rows.forEach(row => {
-      const value = getReportValue(row[questionColumn]);
-      if (!value) return;
-      const key = normalizeForMatch(value);
-      counts.set(key, (counts.get(key) || 0) + 1);
+      getReportValues(row[questionColumn]).forEach(value => {
+        const key = normalizeForMatch(value);
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
     });
     return counts;
   }
@@ -1542,7 +1888,12 @@
     const skippedText = result.skipped.length ? `, skipped ${result.skipped.length} missing columns` : '';
     els.reportOutputMeta.textContent = `${result.questionCount} response columns from ${result.sourceName}${skippedText}`;
     renderReportContextBar(result);
-    els.distributionOutput.innerHTML = `
+    const linkedSummary = result.linkedSummary && result.linkedSummary.length ? `
+      <div class="linked-category-summary">
+        <h3>Linked category coverage</h3>
+        <table><thead><tr><th>Category</th><th class="number">Matched sites</th><th class="number">Survey responses</th></tr></thead><tbody>${result.linkedSummary.map(item => `<tr><td>${escapeHtml(item.category)}</td><td class="number">${formatNumber(item.matchedSites)}</td><td class="number">${formatNumber(item.surveyResponses)}</td></tr>`).join('')}</tbody></table>
+      </div>` : '';
+    els.distributionOutput.innerHTML = `${linkedSummary}
       <table>
         <tbody>
           ${result.rows.map(row => {
@@ -1652,6 +2003,11 @@
     return columns.find(column => pattern.test(column)) || columns[0] || '';
   }
 
+  function pickLinkField(columns) {
+    const exactPatterns = [/^site(?: name| id)?$/i, /^school(?: name| id)?$/i, /^location(?: name| id)?$/i, /^center(?: name| id)?$/i, /^centre(?: name| id)?$/i, /^program id$/i, /^id$/i];
+    return columns.find(column => exactPatterns.some(pattern => pattern.test(column))) || columns[0] || '';
+  }
+
   function isLikelyMetadataColumn(column) {
     return /^(id|student id|response id|tempid)$/i.test(column)
       || /date|timestamp|email|name|phone|address/i.test(column);
@@ -1676,6 +2032,22 @@
         });
         return record;
       });
+  }
+
+  function isLinkedReportContext(source, sheetName) {
+    return Boolean(state.linkedSurvey.active
+      && state.linkedSurvey.result
+      && source
+      && source.workbook === state.workbook
+      && sheetName === state.sheetName);
+  }
+
+  function getReportDataRows(source, sheetName) {
+    if (!isLinkedReportContext(source, sheetName)) return getSheetRecords(source.workbook, sheetName);
+    if (state.linkedSurvey.question) {
+      return LinkedSurvey.enrichMatchedRows(state.linkedSurvey.result, state.linkedSurvey.question).rows;
+    }
+    return state.linkedSurvey.result.matched.map(match => ({ ...match.primary, __linkedSiteKey: match.key }));
   }
 
   function getSheetMatrix(workbook, sheetName) {
@@ -1738,16 +2110,18 @@
     const seen = new Set();
     const values = [];
     rows.forEach(row => {
-      const value = getReportValue(row[column]);
-      if (!value || seen.has(value)) return;
-      seen.add(value);
-      values.push(value);
+      getReportValues(row[column]).forEach(value => {
+        const key = normalizeForMatch(value);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        values.push(value);
+      });
     });
     return values;
   }
 
   function getReportFilterValues(rows, column) {
-    return Array.from(new Set(rows.map(row => getResponseLabel(row[column]))))
+    return Array.from(new Set(rows.flatMap(row => getResponseLabels(row[column]))))
       .sort((a, b) => a.localeCompare(b));
   }
 
@@ -1766,6 +2140,10 @@
   function getReportValue(value) {
     const normalized = normalizeValue(value);
     return normalized === NO_RESPONSE ? '' : normalized;
+  }
+
+  function getReportValues(value) {
+    return getResponseLabels(value).map(getReportValue).filter(Boolean);
   }
 
   function sortReportAnswers(values, questionText) {
@@ -1862,8 +2240,25 @@
       const stats = state.columnStats.get(column);
       return stats && stats.uniqueCount > 0 && stats.uniqueCount <= REPORT_UNIQUE_VALUE_LIMIT && !state.hiddenAnalysisColumns.has(column);
     });
-    state.columns = eligible;
-    state.rows = state.allRows.map(row => pickRecordColumns(row, eligible));
+    let analysisRows = state.allRows;
+    const linked = state.linkedSurvey;
+    if (linked.active && linked.result) {
+      analysisRows = linked.result.matched.map(match => ({ ...match.primary, __linkedSiteKey: match.key }));
+      if (linked.question) {
+        const enriched = LinkedSurvey.enrichMatchedRows(linked.result, linked.question);
+        analysisRows = enriched.rows;
+        linked.column = enriched.column;
+        const values = analysisRows.flatMap(row => getResponseLabels(row[linked.column])).filter(value => value !== NO_RESPONSE);
+        state.columnStats.set(linked.column, {
+          type: 'Linked survey',
+          answeredCount: analysisRows.filter(row => getResponseLabels(row[linked.column]).some(value => value !== NO_RESPONSE)).length,
+          uniqueCount: new Set(values.map(normalizeForMatch)).size,
+          missingCount: analysisRows.filter(row => !getResponseLabels(row[linked.column]).some(value => value !== NO_RESPONSE)).length
+        });
+      }
+    }
+    state.columns = linked.active && linked.column ? [...eligible, linked.column] : eligible;
+    state.rows = analysisRows.map(row => ({ ...pickRecordColumns(row, state.columns), __linkedSiteKey: row.__linkedSiteKey || '' }));
     state.excludedChartColumns = state.allColumns.filter(column => !eligible.includes(column));
   }
 
@@ -2117,6 +2512,14 @@
     state.nextChartNumber = 1;
     state.sources = state.sources.filter(source => source.id !== UPLOADED_SOURCE_ID);
     state.reportResult = null;
+    state.linkedSurvey = {
+      active: false,
+      secondaryWorkbook: null,
+      secondaryFileName: '',
+      result: null,
+      question: '',
+      column: ''
+    };
     els.chartGrid.innerHTML = '';
     els.fileStats.innerHTML = '';
     els.reportOutputTitle.textContent = 'No report generated yet';

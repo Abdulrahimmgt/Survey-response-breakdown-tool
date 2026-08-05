@@ -4,6 +4,7 @@ const files = {
   '/': { source: 'index.html', contentType: 'text/html; charset=utf-8' },
   '/index.html': { source: 'index.html', contentType: 'text/html; charset=utf-8' },
   '/style.css': { source: 'style.css', contentType: 'text/css; charset=utf-8' },
+  '/linked-survey.js': { source: 'linked-survey.js', contentType: 'application/javascript; charset=utf-8' },
   '/script.js': { source: 'script.js', contentType: 'application/javascript; charset=utf-8' }
 };
 

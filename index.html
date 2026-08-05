@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#087f73">
   <title>Survey Response Analyzer</title>
-  <link rel="stylesheet" href="style.css?v=20260804-2">
+  <link rel="stylesheet" href="style.css?v=20260805-1">
 </head>
 <body>
   <header class="app-header">
@@ -100,6 +100,48 @@
         <button id="changeSheetBtn" class="ghost-btn" type="button">Change sheet</button>
         <button id="replaceFileBtn" class="ghost-btn" type="button">Replace file</button>
         <button id="clearDataBtn" class="ghost-btn danger-text" type="button">Clear data</button>
+      </div>
+    </section>
+
+    <section id="linkedSurveyPanel" class="linked-survey-panel hidden" aria-labelledby="linked-survey-title">
+      <div class="linked-survey-heading">
+        <div>
+          <p class="eyebrow">Optional linked analysis</p>
+          <h2 id="linked-survey-title">Link a secondary survey</h2>
+          <p>Match this survey to another survey and use one of its questions as a breakdown across charts and reports.</p>
+        </div>
+        <div class="linked-survey-heading-actions"><span id="linkHeadlineStatus" class="link-headline-status hidden"></span><button id="toggleLinkedSurveyBtn" class="secondary-btn" type="button" aria-expanded="false">Set up link</button></div>
+      </div>
+      <div id="linkedSurveySetup" class="linked-survey-setup hidden">
+        <div class="link-workflow-grid">
+          <div class="link-step-card">
+            <div class="step-label"><span>1</span><div><strong>Primary survey</strong><small>The active dataset and sheet</small></div></div>
+            <div class="link-primary-summary"><strong id="linkPrimaryName">—</strong><span id="linkPrimarySheet">—</span></div>
+            <label class="field"><span>Primary matching field</span><select id="linkPrimaryField"></select></label>
+          </div>
+          <div class="link-step-card">
+            <div class="step-label"><span>2</span><div><strong>Secondary survey</strong><small>Another sheet or a separate file</small></div></div>
+            <label class="field"><span>Secondary source</span><select id="linkSecondarySource"><option value="workbook">Another sheet in the primary workbook</option><option value="file">Upload a separate survey file</option></select></label>
+            <label id="linkSecondaryFileWrap" class="field hidden"><span>Secondary file</span><input id="linkSecondaryFile" type="file" accept=".xlsx,.xls,.csv"></label>
+            <div id="linkSecondaryFileName" class="column-note"></div>
+            <label class="field"><span>Secondary sheet</span><select id="linkSecondarySheet"></select></label>
+            <label class="field"><span>Secondary matching field</span><select id="linkSecondaryField"></select></label>
+          </div>
+          <div class="link-step-card">
+            <div class="step-label"><span>3</span><div><strong>Disaggregation</strong><small>Choose any secondary question</small></div></div>
+            <label class="field"><span>Secondary question</span><select id="linkQuestion"><option value="">Select after matching</option></select></label>
+            <p class="column-note">Multi-select answers are expanded so each matched response appears in every selected category.</p>
+            <div class="link-actions"><button id="createSurveyLinkBtn" class="primary-btn" type="button">Match surveys</button><button id="clearSurveyLinkBtn" class="ghost-btn danger-text hidden" type="button">Remove link</button></div>
+          </div>
+        </div>
+        <div id="linkValidation" class="status-message" role="status" aria-live="polite"></div>
+        <div id="linkStatusSummary" class="link-status-summary hidden" aria-label="Survey matching status"></div>
+        <div id="linkWarnings" class="link-warnings hidden"></div>
+        <div id="linkDiagnosticActions" class="link-diagnostic-actions hidden">
+          <button id="viewUnmatchedBtn" class="secondary-btn" type="button">View unmatched records</button>
+          <button id="downloadUnmatchedBtn" class="secondary-btn" type="button">Download unmatched CSV</button>
+          <button id="viewDuplicatesBtn" class="secondary-btn" type="button">View duplicate values</button>
+        </div>
       </div>
     </section>
 
@@ -256,6 +298,13 @@
     </form>
   </dialog>
 
+  <dialog id="linkDetailsDialog" class="link-details-dialog">
+    <div class="link-details-shell">
+      <div class="link-details-heading"><div><p class="eyebrow">Match diagnostics</p><h2 id="linkDetailsTitle">Linked survey details</h2></div><button id="closeLinkDetailsBtn" class="icon-btn" type="button" aria-label="Close details">×</button></div>
+      <div id="linkDetailsBody" class="table-wrap link-details-body"></div>
+    </div>
+  </dialog>
+
   <template id="chartCardTemplate">
     <article class="chart-card">
       <header class="chart-card-header">
@@ -410,6 +459,7 @@
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
-  <script src="script.js?v=20260804-2"></script>
+  <script src="linked-survey.js?v=20260805-1"></script>
+  <script src="script.js?v=20260805-1"></script>
 </body>
 </html>
