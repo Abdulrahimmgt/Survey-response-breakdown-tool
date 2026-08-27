@@ -3,6 +3,7 @@
 
   const NO_RESPONSE = 'No Response';
   const TABLE_ROW_LIMIT = 10;
+  const CHART_UNIQUE_VALUE_LIMIT = ChartRules.DEFAULT_MAX_UNIQUE_VALUES;
   const REPORT_UNIQUE_VALUE_LIMIT = 15;
   const REPORT_FILTER_UNIQUE_VALUE_LIMIT = 500;
   const UPLOADED_SOURCE_ID = 'uploaded-workbook';
@@ -343,7 +344,9 @@
         });
         return record;
       });
-    const chartColumns = getColumnsWithinUniqueLimit(allRows, allColumns, REPORT_UNIQUE_VALUE_LIMIT);
+    const chartColumns = ChartRules.getEligibleChartColumns(allRows, allColumns, {
+      maxUniqueValues: CHART_UNIQUE_VALUE_LIMIT
+    });
 
     state.rawColumnCount = allColumns.length;
     state.excludedChartColumns = allColumns.filter(column => !chartColumns.includes(column));
@@ -2009,8 +2012,7 @@
   }
 
   function isLikelyMetadataColumn(column) {
-    return /^(id|student id|response id|tempid)$/i.test(column)
-      || /date|timestamp|email|name|phone|address/i.test(column);
+    return ChartRules.isLikelyMetadataColumn(column);
   }
 
   function getSheetColumns(workbook, sheetName) {
@@ -2125,10 +2127,6 @@
       .sort((a, b) => a.localeCompare(b));
   }
 
-  function getColumnsWithinUniqueLimit(rows, columns, limit) {
-    return columns.filter(column => getReportUniqueValues(rows, column).length <= limit);
-  }
-
   function pickRecordColumns(row, columns) {
     const record = {};
     columns.forEach(column => {
@@ -2236,9 +2234,9 @@
   }
 
   function updateAnalysisColumns() {
-    const eligible = state.allColumns.filter(column => {
-      const stats = state.columnStats.get(column);
-      return stats && stats.uniqueCount > 0 && stats.uniqueCount <= REPORT_UNIQUE_VALUE_LIMIT && !state.hiddenAnalysisColumns.has(column);
+    const eligible = ChartRules.getEligibleChartColumns(state.allRows, state.allColumns, {
+      maxUniqueValues: CHART_UNIQUE_VALUE_LIMIT,
+      hiddenColumns: state.hiddenAnalysisColumns
     });
     let analysisRows = state.allRows;
     const linked = state.linkedSurvey;
@@ -2353,11 +2351,17 @@
       ['Missing cells', formatNumber(missingCells)]
     ].map(([label, value]) => `<div class="preview-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
 
+    const eligibleChartColumns = new Set(ChartRules.getEligibleChartColumns(state.allRows, state.allColumns, {
+      maxUniqueValues: CHART_UNIQUE_VALUE_LIMIT
+    }));
     els.columnProfiles.innerHTML = state.allColumns.map(column => {
       const stats = state.columnStats.get(column);
-      const automaticallyExcluded = stats.uniqueCount === 0 || stats.uniqueCount > REPORT_UNIQUE_VALUE_LIMIT;
+      const automaticallyExcluded = !eligibleChartColumns.has(column);
       const inAnalysis = state.columns.includes(column);
-      return `<div class="column-profile"><strong title="${escapeAttr(column)}">${escapeHtml(column)}</strong><label title="${automaticallyExcluded ? 'Automatically excluded because it is empty or open-ended' : 'Show or hide this column in chart analysis'}"><input type="checkbox" data-analysis-column="${escapeAttr(column)}" aria-label="Analyze ${escapeAttr(column)}" ${inAnalysis ? 'checked' : ''} ${automaticallyExcluded ? 'disabled' : ''}> Analyze</label><small>${escapeHtml(stats.type)} · ${formatNumber(stats.uniqueCount)} unique · ${formatNumber(stats.missingCount)} missing${automaticallyExcluded ? ' · not chart-ready' : ''}</small></div>`;
+      const exclusionReason = isLikelyMetadataColumn(column)
+        ? 'metadata column'
+        : (stats.uniqueCount === 0 ? 'empty column' : `more than ${CHART_UNIQUE_VALUE_LIMIT} unique values`);
+      return `<div class="column-profile"><strong title="${escapeAttr(column)}">${escapeHtml(column)}</strong><label title="${automaticallyExcluded ? `Automatically excluded: ${exclusionReason}` : 'Show or hide this column in chart analysis'}"><input type="checkbox" data-analysis-column="${escapeAttr(column)}" aria-label="Analyze ${escapeAttr(column)}" ${inAnalysis ? 'checked' : ''} ${automaticallyExcluded ? 'disabled' : ''}> Analyze</label><small>${escapeHtml(stats.type)} · ${formatNumber(stats.uniqueCount)} unique · ${formatNumber(stats.missingCount)} missing${automaticallyExcluded ? ` · ${escapeHtml(exclusionReason)}` : ''}</small></div>`;
     }).join('');
     els.columnProfiles.querySelectorAll('input[data-analysis-column]').forEach(input => input.addEventListener('change', () => {
       if (input.checked) state.hiddenAnalysisColumns.delete(input.dataset.analysisColumn);
