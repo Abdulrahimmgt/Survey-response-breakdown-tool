@@ -163,8 +163,12 @@
           <p class="eyebrow">Chart workspace</p>
           <h2 id="dashboard-title">Explore your survey responses</h2>
           <p id="dashboardHint">Choose a survey question, configure the analysis, then export the result.</p>
+          <p id="chartEligibilityHint" class="dashboard-rule-note"></p>
         </div>
-        <button id="addChartBtn" class="primary-btn" type="button">+ Add chart</button>
+        <div class="dashboard-actions">
+          <button id="generateAllChartsBtn" class="secondary-btn" type="button">Generate all eligible charts</button>
+          <button id="addChartBtn" class="primary-btn" type="button">+ Add chart</button>
+        </div>
       </div>
       <div id="chartGrid" class="chart-grid"></div>
     </section>

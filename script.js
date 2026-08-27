@@ -88,6 +88,8 @@
     dashboardSection: document.getElementById('dashboardSection'),
     chartGrid: document.getElementById('chartGrid'),
     addChartBtn: document.getElementById('addChartBtn'),
+    generateAllChartsBtn: document.getElementById('generateAllChartsBtn'),
+    chartEligibilityHint: document.getElementById('chartEligibilityHint'),
     emptyState: document.getElementById('emptyState'),
     sampleDataBtn: document.getElementById('sampleDataBtn'),
     changeSheetBtn: document.getElementById('changeSheetBtn'),
@@ -170,6 +172,7 @@
   els.fileInput.addEventListener('change', handleFileUpload);
   els.sheetSelect.addEventListener('change', () => loadSheet(els.sheetSelect.value));
   els.addChartBtn.addEventListener('click', () => addChart());
+  els.generateAllChartsBtn.addEventListener('click', generateAllEligibleCharts);
   els.loadPublicSheetBtn.addEventListener('click', loadPublicGoogleSheet);
   els.reportSourceSelect.addEventListener('change', renderReportControls);
   els.reportDataSheetSelect.addEventListener('change', renderReportColumns);
@@ -382,6 +385,7 @@
     els.mainTabs.classList.toggle('hidden', !hasDataset);
     els.uploadPanel.classList.toggle('is-compact', hasDataset);
     els.addChartBtn.disabled = !hasData;
+    els.generateAllChartsBtn.disabled = !hasData;
 
     if (hasDataset) setActiveTab(state.activeTab || 'charts');
     else {
@@ -418,6 +422,49 @@
     const chart = createChartConfig(sourceConfig);
     state.charts.push(chart);
     renderAllCharts();
+  }
+
+  function getAutomaticChartColumns() {
+    return ChartRules.getEligibleChartColumns(state.rows, state.columns, {
+      maxUniqueValues: CHART_UNIQUE_VALUE_LIMIT
+    });
+  }
+
+  function generateAllEligibleCharts() {
+    const eligibleColumns = getAutomaticChartColumns();
+    const missingColumns = ChartRules.getMissingChartColumns(eligibleColumns, state.charts);
+
+    state.charts.forEach(chart => {
+      if (eligibleColumns.includes(chart.primaryColumn) && /^Chart \d+$/.test(chart.title)) {
+        chart.title = chart.primaryColumn;
+      }
+    });
+
+    missingColumns.forEach(column => {
+      const chart = createChartConfig();
+      chart.title = column;
+      chart.primaryColumn = column;
+      chart.settingsCollapsed = true;
+      state.charts.push(chart);
+    });
+
+    renderAllCharts();
+    if (!eligibleColumns.length) {
+      showToast('No chart-ready questions were found.', 'warning');
+    } else if (!missingColumns.length) {
+      showToast('Every eligible question already has a chart.');
+    } else {
+      showToast(`${missingColumns.length} chart${missingColumns.length === 1 ? '' : 's'} generated.`);
+    }
+  }
+
+  function renderChartEligibilitySummary() {
+    if (!els.chartEligibilityHint) return;
+    const eligibleCount = getAutomaticChartColumns().length;
+    els.chartEligibilityHint.textContent = state.allRows.length
+      ? `${formatNumber(eligibleCount)} eligible question${eligibleCount === 1 ? '' : 's'} · 1–${CHART_UNIQUE_VALUE_LIMIT} unique responses · metadata excluded`
+      : '';
+    els.generateAllChartsBtn.disabled = eligibleCount === 0;
   }
 
   function createChartConfig(sourceConfig) {
@@ -467,6 +514,7 @@
   }
 
   function renderAllCharts() {
+    renderChartEligibilitySummary();
     els.chartGrid.innerHTML = '';
     state.charts.forEach(chart => {
       const card = renderChartCard(chart);
