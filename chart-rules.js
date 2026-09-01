@@ -3,7 +3,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   'use strict';
 
-  const DEFAULT_MAX_UNIQUE_VALUES = 50;
+  const DEFAULT_MAX_UNIQUE_VALUES = 15;
 
   function text(value) {
     if (value === null || value === undefined) return '';

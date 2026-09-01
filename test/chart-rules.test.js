@@ -8,9 +8,9 @@ const context = { globalThis: {} };
 vm.runInNewContext(source, context);
 const ChartRules = context.globalThis.ChartRules;
 
-test('includes answered questions with no more than 50 unique values', () => {
+test('includes answered questions with no more than 15 unique values', () => {
   const columns = ['Question A', 'Question B', 'Question C'];
-  const rows = Array.from({ length: 51 }, (_, index) => ({
+  const rows = Array.from({ length: 16 }, (_, index) => ({
     'Question A': index % 2 ? 'Yes' : 'No',
     'Question B': `Value ${index + 1}`,
     'Question C': index === 0 ? 'Only answer' : ''

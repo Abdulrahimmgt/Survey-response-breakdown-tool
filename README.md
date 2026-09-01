@@ -8,7 +8,7 @@ A static web app for analyzing Excel, CSV, and public Google Sheets survey-style
 - Load a public Google Sheet that does not require sign-in.
 - Choose a sheet when an Excel file has multiple sheets.
 - Create multiple chart cards from the same file.
-- Hide empty, metadata, and open-ended-style columns from chart choices when they have more than 50 unique responses.
+- Hide empty, metadata, and open-ended-style columns from chart choices when they have more than 15 unique responses.
 - Generate one chart for every eligible question with a single action, without duplicating charts already in the workspace.
 - Analyze one column by response count and percentage.
 - Compare one column against another.
@@ -45,7 +45,7 @@ The app uses CDN links for:
 
 ## Automatic charts
 
-The Charts workspace can generate one chart for every eligible question. A chart-ready column must contain at least one answer and no more than 50 normalized unique responses. Likely metadata columns—including IDs, names, dates, timestamps, email addresses, phone numbers, and addresses—are excluded. Existing charts are preserved, and selecting **Generate all eligible charts** again adds only questions that do not already have a chart.
+The Charts workspace can generate one chart for every eligible question. A chart-ready column must contain at least one answer and no more than 15 normalized unique responses. Likely metadata columns—including IDs, names, dates, timestamps, email addresses, phone numbers, and addresses—are excluded. Existing charts are preserved, and selecting **Generate all eligible charts** again adds only questions that do not already have a chart.
 
 ## Question Breakdown Report
 
