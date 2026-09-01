@@ -4,6 +4,7 @@
   const NO_RESPONSE = 'No Response';
   const TABLE_ROW_LIMIT = 10;
   const CHART_UNIQUE_VALUE_LIMIT = ChartRules.DEFAULT_MAX_UNIQUE_VALUES;
+  const CHART_RESPONSE_DISPLAY_LIMIT = ChartRules.DEFAULT_MAX_UNIQUE_VALUES;
   const REPORT_UNIQUE_VALUE_LIMIT = 15;
   const REPORT_FILTER_UNIQUE_VALUE_LIMIT = 500;
   const UPLOADED_SOURCE_ID = 'uploaded-workbook';
@@ -444,6 +445,8 @@
       const chart = createChartConfig();
       chart.title = column;
       chart.primaryColumn = column;
+      chart.topMode = String(CHART_RESPONSE_DISPLAY_LIMIT);
+      chart.includeBlanks = false;
       chart.settingsCollapsed = true;
       state.charts.push(chart);
     });
@@ -462,7 +465,7 @@
     if (!els.chartEligibilityHint) return;
     const eligibleCount = getAutomaticChartColumns().length;
     els.chartEligibilityHint.textContent = state.allRows.length
-      ? `${formatNumber(eligibleCount)} eligible question${eligibleCount === 1 ? '' : 's'} · 1–${CHART_UNIQUE_VALUE_LIMIT} unique responses · metadata excluded`
+      ? `${formatNumber(eligibleCount)} eligible question${eligibleCount === 1 ? '' : 's'} · ${ChartRules.DEFAULT_MIN_UNIQUE_VALUES}–${CHART_UNIQUE_VALUE_LIMIT} unique responses · metadata excluded`
       : '';
     els.generateAllChartsBtn.disabled = eligibleCount === 0;
   }
@@ -480,10 +483,10 @@
       compareType: 'grouped',
       compareValueMode: 'counts',
       sortMode: 'desc',
-      topMode: '10',
+      topMode: String(CHART_RESPONSE_DISPLAY_LIMIT),
       showCounts: true,
       showPercentages: true,
-      includeBlanks: true,
+      includeBlanks: false,
       filters: [],
       summarySearch: '',
       selectedResponses: new Set(),
@@ -705,7 +708,7 @@
       ? buildComparisonResult(filteredRows, chart)
       : buildSingleColumnResult(filteredRows, chart);
 
-    const validResponses = filteredRows.filter(row => getResponseLabel(row[chart.primaryColumn]) !== NO_RESPONSE).length;
+    const validResponses = filteredRows.filter(row => getResponseLabels(row[chart.primaryColumn]).some(label => label !== NO_RESPONSE)).length;
     const categoryTotal = result.type === 'single' ? result.items.length : result.labels.length;
     card.querySelector('.valid-response-count').textContent = `${formatNumber(validResponses)} valid response${validResponses === 1 ? '' : 's'}`;
     card.querySelector('.category-count').textContent = `${formatNumber(categoryTotal)} categor${categoryTotal === 1 ? 'y' : 'ies'}`;
@@ -802,9 +805,10 @@
   function buildSingleColumnResult(rows, chart) {
     const counts = new Map();
     let nonBlank = 0;
+    const columnLabels = getColumnNonBlankLabels(rows, chart.primaryColumn);
 
     rows.forEach(row => {
-      const originalLabels = getResponseLabels(row[chart.primaryColumn]);
+      const originalLabels = getDisplayResponseLabelsForColumn(row[chart.primaryColumn], columnLabels);
       if (originalLabels.some(label => label !== NO_RESPONSE)) nonBlank += 1;
       originalLabels.forEach(originalLabel => {
         if (!chart.includeBlanks && originalLabel === NO_RESPONSE) return;
@@ -817,7 +821,7 @@
     let items = Array.from(counts, ([response, count]) => ({
       response,
       count,
-      rowPercent: rows.length ? roundOne((count / rows.length) * 100) : 0,
+      rowPercent: (chart.includeBlanks ? rows.length : nonBlank) ? roundOne((count / (chart.includeBlanks ? rows.length : nonBlank)) * 100) : 0,
       nonBlankPercent: nonBlank ? roundOne((count / nonBlank) * 100) : 0
     }));
 
@@ -837,10 +841,12 @@
     const matrix = new Map();
     const comparisonLabels = new Set();
     let total = 0;
+    const primaryColumnLabels = getColumnNonBlankLabels(rows, chart.primaryColumn);
+    const compareColumnLabels = getColumnNonBlankLabels(rows, chart.compareColumn);
 
     rows.forEach(row => {
-      const primaries = getResponseLabels(row[chart.primaryColumn]).map(label => getMergedLabel(label, chart.merges));
-      const comparisons = getResponseLabels(row[chart.compareColumn]);
+      const primaries = getDisplayResponseLabelsForColumn(row[chart.primaryColumn], primaryColumnLabels).map(label => getMergedLabel(label, chart.merges));
+      const comparisons = getDisplayResponseLabelsForColumn(row[chart.compareColumn], compareColumnLabels);
       primaries.forEach(primary => comparisons.forEach(comparison => {
         if (!chart.includeBlanks && (primary === NO_RESPONSE || comparison === NO_RESPONSE)) return;
         if (chart.hiddenResponses.has(primary)) return;
@@ -966,6 +972,9 @@
         responsive: true,
         maintainAspectRatio: false,
         indexAxis: resolvedType === 'horizontalBar' ? 'y' : 'x',
+        layout: {
+          padding: { top: 24, right: resolvedType === 'horizontalBar' ? 64 : 18 }
+        },
         plugins: {
           legend: { display: ['pie', 'doughnut'].includes(resolvedType) },
           tooltip: {
@@ -990,7 +999,6 @@
             }),
             formatter: (value, context) => {
               const item = result.items[context.dataIndex];
-              if (['pie', 'doughnut'].includes(resolvedType) && item.rowPercent < 4) return '';
               const parts = [];
               if (chart.showCounts) parts.push(formatNumber(value));
               if (chart.showPercentages) parts.push(`${item.rowPercent}%`);
@@ -999,8 +1007,8 @@
           }
         },
         scales: ['pie', 'doughnut'].includes(resolvedType) ? {} : {
-          x: { beginAtZero: true, grid: { color: CHART_GRID } },
-          y: { beginAtZero: true, grid: { display: resolvedType !== 'horizontalBar', color: CHART_GRID } }
+          x: { beginAtZero: true, grace: resolvedType === 'horizontalBar' ? '12%' : 0, grid: { color: CHART_GRID } },
+          y: { beginAtZero: true, grace: resolvedType === 'horizontalBar' ? 0 : '12%', grid: { display: resolvedType !== 'horizontalBar', color: CHART_GRID } }
         }
       }
     };
@@ -1173,7 +1181,7 @@
   }
 
   function applyTopGrouping(items, topMode, totalRows, nonBlankRows) {
-    const topCount = Math.min(Number(topMode) || TABLE_ROW_LIMIT, TABLE_ROW_LIMIT);
+    const topCount = Math.min(Number(topMode) || CHART_RESPONSE_DISPLAY_LIMIT, CHART_RESPONSE_DISPLAY_LIMIT);
     if (items.length <= topCount) return items;
 
     const topItems = items.slice(0, topCount - 1);
@@ -1190,8 +1198,18 @@
   }
 
   function getUniqueValues(rows, column) {
-    return Array.from(new Set(rows.flatMap(row => getResponseLabels(row[column]))))
+    const columnLabels = getColumnNonBlankLabels(rows, column);
+    return Array.from(new Set(rows.flatMap(row => getDisplayResponseLabelsForColumn(row[column], columnLabels))))
       .sort((a, b) => a.localeCompare(b));
+  }
+
+  function getColumnNonBlankLabels(rows, column) {
+    return rows.flatMap(row => getResponseLabels(row[column])).filter(label => label !== NO_RESPONSE);
+  }
+
+  function getDisplayResponseLabelsForColumn(value, nonBlankLabels) {
+    const labels = getResponseLabels(value);
+    return labels.map(label => ChartRules.getDisplayAnswerLabel(label, nonBlankLabels));
   }
 
   function getResponseLabels(value) {

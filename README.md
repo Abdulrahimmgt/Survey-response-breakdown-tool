@@ -45,7 +45,7 @@ The app uses CDN links for:
 
 ## Automatic charts
 
-The Charts workspace can generate one chart for every eligible question. A chart-ready column must contain at least one answer and no more than 15 normalized unique responses. Likely metadata columns—including IDs, names, dates, timestamps, email addresses, phone numbers, and addresses—are excluded. Existing charts are preserved, and selecting **Generate all eligible charts** again adds only questions that do not already have a chart.
+The Charts workspace can generate one chart for every eligible question. A chart-ready column must contain at least two and no more than 15 normalized unique responses. Likely metadata columns—including IDs, names, dates, timestamps, email addresses, phone numbers, and addresses—are excluded. Blank responses are not shown in generated charts. Existing charts are preserved, and selecting **Generate all eligible charts** again adds only questions that do not already have a chart.
 
 ## Question Breakdown Report
 
@@ -87,7 +87,7 @@ Open `index.html` in your browser.
 
 - The first row is treated as the column header row.
 - Completely empty rows are ignored.
-- Blank cells are grouped as `No Response`.
+- Blank cells can be grouped as `No Response` when a chart is configured to include blanks.
 - Zero and `false` values are preserved as valid responses.
 - The original uploaded file is not changed.
 - The app is designed for normal Excel and CSV files up to about 50,000 rows.

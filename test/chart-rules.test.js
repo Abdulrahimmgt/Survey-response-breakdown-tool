@@ -18,7 +18,7 @@ test('includes answered questions with no more than 15 unique values', () => {
 
   assert.deepEqual(
     Array.from(ChartRules.getEligibleChartColumns(rows, columns)),
-    ['Question A', 'Question C']
+    ['Question A']
   );
 });
 
@@ -31,6 +31,23 @@ test('counts normalized response labels when applying the unique-value limit', (
 
   assert.deepEqual(Array.from(ChartRules.getEligibleChartColumns(rows, ['Question'])), ['Question']);
   assert.equal(ChartRules.countUniqueAnswers(rows, 'Question'), 2);
+});
+
+test('excludes questions with only one unique answer', () => {
+  const rows = [
+    { Question: 'Yes' },
+    { Question: 'Yes' },
+    { Question: '' }
+  ];
+
+  assert.deepEqual(Array.from(ChartRules.getEligibleChartColumns(rows, ['Question'])), []);
+});
+
+test('labels true binary zero-one responses as no and yes', () => {
+  assert.equal(ChartRules.shouldUseYesNoLabels(['0', '1', '1']), true);
+  assert.equal(ChartRules.getDisplayAnswerLabel('0', ['0', '1']), 'No');
+  assert.equal(ChartRules.getDisplayAnswerLabel('1', ['0', '1']), 'Yes');
+  assert.equal(ChartRules.getDisplayAnswerLabel('0', ['0', '1', '2']), '0');
 });
 
 test('excludes empty and likely metadata columns from automatic charts', () => {

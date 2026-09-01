@@ -4,6 +4,7 @@
   'use strict';
 
   const DEFAULT_MAX_UNIQUE_VALUES = 15;
+  const DEFAULT_MIN_UNIQUE_VALUES = 2;
 
   function text(value) {
     if (value === null || value === undefined) return '';
@@ -34,6 +35,19 @@
     return values.size;
   }
 
+  function shouldUseYesNoLabels(labels) {
+    const normalized = new Set(labels.map(normalizeAnswer).filter(Boolean));
+    return normalized.size === 2 && normalized.has('0') && normalized.has('1');
+  }
+
+  function getDisplayAnswerLabel(label, allLabels) {
+    if (!shouldUseYesNoLabels(allLabels)) return label;
+    const normalized = normalizeAnswer(label);
+    if (normalized === '0') return 'No';
+    if (normalized === '1') return 'Yes';
+    return label;
+  }
+
   function isLikelyMetadataColumn(column) {
     return /^(id|student id|response id|tempid)$/i.test(text(column))
       || /date|timestamp|email|name|phone|address/i.test(text(column));
@@ -41,6 +55,7 @@
 
   function getEligibleChartColumns(rows, columns, options = {}) {
     const maxUniqueValues = options.maxUniqueValues ?? DEFAULT_MAX_UNIQUE_VALUES;
+    const minUniqueValues = options.minUniqueValues ?? DEFAULT_MIN_UNIQUE_VALUES;
     const hiddenColumns = options.hiddenColumns instanceof Set ? options.hiddenColumns : new Set(options.hiddenColumns || []);
     const includeMetadata = options.includeMetadata === true;
 
@@ -48,7 +63,7 @@
       if (hiddenColumns.has(column)) return false;
       if (!includeMetadata && isLikelyMetadataColumn(column)) return false;
       const uniqueCount = countUniqueAnswers(rows, column);
-      return uniqueCount > 0 && uniqueCount <= maxUniqueValues;
+      return uniqueCount >= minUniqueValues && uniqueCount <= maxUniqueValues;
     });
   }
 
@@ -59,9 +74,12 @@
 
   return {
     DEFAULT_MAX_UNIQUE_VALUES,
+    DEFAULT_MIN_UNIQUE_VALUES,
     countUniqueAnswers,
+    getDisplayAnswerLabel,
     getEligibleChartColumns,
     getMissingChartColumns,
-    isLikelyMetadataColumn
+    isLikelyMetadataColumn,
+    shouldUseYesNoLabels
   };
 });
