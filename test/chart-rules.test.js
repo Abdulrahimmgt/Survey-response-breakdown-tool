@@ -72,6 +72,17 @@ test('returns only eligible columns that do not already have a chart', () => {
   );
 });
 
+test('returns selected chart columns in eligible-column order', () => {
+  assert.deepEqual(
+    ChartRules.getSelectedChartColumns(['Revenue', 'Units Sold', 'Margin'], new Set(['Margin', 'Revenue'])),
+    ['Revenue', 'Margin']
+  );
+  assert.deepEqual(
+    ChartRules.getSelectedChartColumns(['Revenue', 'Units Sold'], ['Units Sold']),
+    ['Units Sold']
+  );
+});
+
 test('supports linked multi-select values when determining eligibility', () => {
   const rows = [
     { Strategies: ['Tutoring', 'Mentoring'] },

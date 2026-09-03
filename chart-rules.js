@@ -72,6 +72,11 @@
     return eligibleColumns.filter(column => !existingColumns.has(column));
   }
 
+  function getSelectedChartColumns(eligibleColumns, selectedColumns) {
+    const selected = selectedColumns instanceof Set ? selectedColumns : new Set(selectedColumns || []);
+    return eligibleColumns.filter(column => selected.has(column));
+  }
+
   return {
     DEFAULT_MAX_UNIQUE_VALUES,
     DEFAULT_MIN_UNIQUE_VALUES,
@@ -79,6 +84,7 @@
     getDisplayAnswerLabel,
     getEligibleChartColumns,
     getMissingChartColumns,
+    getSelectedChartColumns,
     isLikelyMetadataColumn,
     shouldUseYesNoLabels
   };

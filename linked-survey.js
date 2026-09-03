@@ -130,7 +130,7 @@
   function enrichMatchedRows(linkResult, question, options = {}) {
     if (!linkResult || !Array.isArray(linkResult.matched)) throw new Error('Link the surveys before selecting a secondary question.');
     if (!question) throw new Error('Select a secondary survey question for disaggregation.');
-    if (linkResult.matched.length && !(question in linkResult.matched[0].secondary)) {
+    if (linkResult.matched.some(match => !match.secondary || !(question in match.secondary))) {
       throw new Error('The selected secondary survey question is invalid.');
     }
     const column = linkedColumnName(question, options.prefix);

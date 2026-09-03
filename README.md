@@ -9,7 +9,7 @@ A static web app for analyzing Excel, CSV, and public Google Sheets survey-style
 - Choose a sheet when an Excel file has multiple sheets.
 - Create multiple chart cards from the same file.
 - Hide empty, metadata, and open-ended-style columns from chart choices when they have more than 15 unique responses.
-- Generate one chart for every eligible question with a single action, without duplicating charts already in the workspace.
+- Choose one or more eligible questions and generate all selected charts with a single action, without duplicating charts already in the workspace.
 - Analyze one column by response count and percentage.
 - Compare one column against another.
 - Add one or more checklist filters.
@@ -43,9 +43,9 @@ The app uses CDN links for:
 - Chart.js
 - Chart.js Data Labels plugin
 
-## Automatic charts
+## Eligible chart selection
 
-The Charts workspace can generate one chart for every eligible question. A chart-ready column must contain at least two and no more than 15 normalized unique responses. Likely metadata columns—including IDs, names, dates, timestamps, email addresses, phone numbers, and addresses—are excluded. Blank responses are not shown in generated charts. Existing charts are preserved, and selecting **Generate all eligible charts** again adds only questions that do not already have a chart.
+The Charts workspace lists every eligible question before generating anything. A chart-ready column must contain at least two and no more than 15 normalized unique responses. Likely metadata columns—including IDs, names, dates, timestamps, email addresses, phone numbers, and addresses—are excluded. Select individual questions or **Select all**, adjust the selection as needed, and choose **Generate Selected Charts**. Blank responses are not shown in generated charts. Existing charts are preserved, and repeating generation adds only selected questions that do not already have a chart.
 
 ## Question Breakdown Report
 

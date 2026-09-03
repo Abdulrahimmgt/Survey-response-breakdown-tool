@@ -82,3 +82,14 @@ test('validates missing matching fields and invalid secondary questions', () => 
   const link = LinkedSurvey.analyzeLink([{ Site: 'A' }], [{ Site: 'A', Type: 'Urban' }], 'Site', 'Site');
   assert.throws(() => LinkedSurvey.enrichMatchedRows(link, 'Missing question'), /invalid/);
 });
+
+test('rejects a secondary question when any matched record lacks the selected field', () => {
+  const link = {
+    matched: [
+      { primary: { Site: 'A' }, secondary: { Site: 'A', Segment: 'Urban' } },
+      { primary: { Site: 'B' }, secondary: { Site: 'B' } }
+    ]
+  };
+
+  assert.throws(() => LinkedSurvey.enrichMatchedRows(link, 'Segment'), /invalid/);
+});

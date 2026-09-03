@@ -57,6 +57,9 @@
     columnStats: new Map(),
     rawColumnCount: 0,
     excludedChartColumns: [],
+    eligibleChartColumns: [],
+    selectedChartColumns: new Set(),
+    chartGenerationInProgress: false,
     charts: [],
     nextChartNumber: 1,
     sources: [],
@@ -89,7 +92,11 @@
     dashboardSection: document.getElementById('dashboardSection'),
     chartGrid: document.getElementById('chartGrid'),
     addChartBtn: document.getElementById('addChartBtn'),
-    generateAllChartsBtn: document.getElementById('generateAllChartsBtn'),
+    generateSelectedChartsBtn: document.getElementById('generateSelectedChartsBtn'),
+    selectAllCharts: document.getElementById('selectAllCharts'),
+    chartColumnChecklist: document.getElementById('chartColumnChecklist'),
+    selectedChartCount: document.getElementById('selectedChartCount'),
+    chartGenerationStatus: document.getElementById('chartGenerationStatus'),
     chartEligibilityHint: document.getElementById('chartEligibilityHint'),
     emptyState: document.getElementById('emptyState'),
     sampleDataBtn: document.getElementById('sampleDataBtn'),
@@ -173,7 +180,11 @@
   els.fileInput.addEventListener('change', handleFileUpload);
   els.sheetSelect.addEventListener('change', () => loadSheet(els.sheetSelect.value));
   els.addChartBtn.addEventListener('click', () => addChart());
-  els.generateAllChartsBtn.addEventListener('click', generateAllEligibleCharts);
+  els.generateSelectedChartsBtn.addEventListener('click', generateSelectedCharts);
+  els.selectAllCharts.addEventListener('change', event => {
+    state.selectedChartColumns = event.target.checked ? new Set(state.eligibleChartColumns) : new Set();
+    renderChartSelection();
+  });
   els.loadPublicSheetBtn.addEventListener('click', loadPublicGoogleSheet);
   els.reportSourceSelect.addEventListener('change', renderReportControls);
   els.reportDataSheetSelect.addEventListener('change', renderReportColumns);
@@ -354,6 +365,8 @@
 
     state.rawColumnCount = allColumns.length;
     state.excludedChartColumns = allColumns.filter(column => !chartColumns.includes(column));
+    state.eligibleChartColumns = chartColumns;
+    state.selectedChartColumns = new Set();
     state.allColumns = allColumns;
     state.allRows = allRows;
     state.columnStats = buildColumnStats(allRows, allColumns);
@@ -362,10 +375,7 @@
     state.charts = [];
     state.nextChartNumber = 1;
     renderDataset();
-    if (state.columns.length && state.rows.length) {
-      addChart();
-      setActiveTab('charts');
-    }
+    if (state.columns.length && state.rows.length) setActiveTab('charts');
   }
 
   function makeUniqueHeaders(headerRow) {
@@ -386,7 +396,7 @@
     els.mainTabs.classList.toggle('hidden', !hasDataset);
     els.uploadPanel.classList.toggle('is-compact', hasDataset);
     els.addChartBtn.disabled = !hasData;
-    els.generateAllChartsBtn.disabled = !hasData;
+    els.generateSelectedChartsBtn.disabled = !hasData || state.chartGenerationInProgress;
 
     if (hasDataset) setActiveTab(state.activeTab || 'charts');
     else {
@@ -425,49 +435,120 @@
     renderAllCharts();
   }
 
-  function getAutomaticChartColumns() {
-    return ChartRules.getEligibleChartColumns(state.rows, state.columns, {
-      maxUniqueValues: CHART_UNIQUE_VALUE_LIMIT
-    });
-  }
+  async function generateSelectedCharts() {
+    if (state.chartGenerationInProgress) return;
+    const selectedColumns = ChartRules.getSelectedChartColumns(state.eligibleChartColumns, state.selectedChartColumns);
+    if (!selectedColumns.length) {
+      showChartGenerationStatus('Select at least one eligible column before generating charts.', 'warning');
+      showToast('Select at least one chart column.', 'warning');
+      return;
+    }
 
-  function generateAllEligibleCharts() {
-    const eligibleColumns = getAutomaticChartColumns();
-    const missingColumns = ChartRules.getMissingChartColumns(eligibleColumns, state.charts);
+    const missingColumns = ChartRules.getMissingChartColumns(selectedColumns, state.charts);
+    if (!missingColumns.length) {
+      showChartGenerationStatus('All selected columns already have charts.', '');
+      showToast('Every selected column already has a chart.');
+      return;
+    }
 
-    state.charts.forEach(chart => {
-      if (eligibleColumns.includes(chart.primaryColumn) && /^Chart \d+$/.test(chart.title)) {
-        chart.title = chart.primaryColumn;
+    state.chartGenerationInProgress = true;
+    setButtonLoading(els.generateSelectedChartsBtn, true, 'Generating…');
+    showChartGenerationStatus(`Generating 0 of ${missingColumns.length} charts…`, 'loading');
+
+    try {
+      state.charts.forEach(chart => {
+        if (selectedColumns.includes(chart.primaryColumn) && /^Chart \d+$/.test(chart.title)) {
+          chart.title = chart.primaryColumn;
+        }
+      });
+
+      for (let index = 0; index < missingColumns.length; index += 1) {
+        const column = missingColumns[index];
+        const chart = createChartConfig();
+        chart.title = column;
+        chart.primaryColumn = column;
+        chart.topMode = String(CHART_RESPONSE_DISPLAY_LIMIT);
+        chart.includeBlanks = false;
+        chart.settingsCollapsed = true;
+        state.charts.push(chart);
+        showChartGenerationStatus(`Generating ${index + 1} of ${missingColumns.length} charts…`, 'loading');
+        await new Promise(resolve => window.setTimeout(resolve, 0));
       }
-    });
 
-    missingColumns.forEach(column => {
-      const chart = createChartConfig();
-      chart.title = column;
-      chart.primaryColumn = column;
-      chart.topMode = String(CHART_RESPONSE_DISPLAY_LIMIT);
-      chart.includeBlanks = false;
-      chart.settingsCollapsed = true;
-      state.charts.push(chart);
-    });
-
-    renderAllCharts();
-    if (!eligibleColumns.length) {
-      showToast('No chart-ready questions were found.', 'warning');
-    } else if (!missingColumns.length) {
-      showToast('Every eligible question already has a chart.');
-    } else {
+      renderAllCharts();
+      showChartGenerationStatus(`${missingColumns.length} chart${missingColumns.length === 1 ? '' : 's'} generated.`, '');
       showToast(`${missingColumns.length} chart${missingColumns.length === 1 ? '' : 's'} generated.`);
+    } catch (error) {
+      console.error(error);
+      showChartGenerationStatus(error.message || 'Could not generate the selected charts.', 'error');
+      showToast(error.message || 'Could not generate the selected charts.', 'error');
+    } finally {
+      state.chartGenerationInProgress = false;
+      setButtonLoading(els.generateSelectedChartsBtn, false);
+      updateChartGenerationControls();
     }
   }
 
   function renderChartEligibilitySummary() {
     if (!els.chartEligibilityHint) return;
-    const eligibleCount = getAutomaticChartColumns().length;
+    const eligibleCount = state.eligibleChartColumns.length;
     els.chartEligibilityHint.textContent = state.allRows.length
       ? `${formatNumber(eligibleCount)} eligible question${eligibleCount === 1 ? '' : 's'} · ${ChartRules.DEFAULT_MIN_UNIQUE_VALUES}–${CHART_UNIQUE_VALUE_LIMIT} unique responses · metadata excluded`
       : '';
-    els.generateAllChartsBtn.disabled = eligibleCount === 0;
+    renderChartSelection();
+  }
+
+  function renderChartSelection() {
+    if (!els.chartColumnChecklist) return;
+    const eligibleColumns = state.eligibleChartColumns;
+    const selected = new Set(eligibleColumns.filter(column => state.selectedChartColumns.has(column)));
+    state.selectedChartColumns = selected;
+
+    if (!eligibleColumns.length) {
+      els.chartColumnChecklist.innerHTML = '<div class="checklist-empty">No chart-ready columns were found in this dataset.</div>';
+    } else {
+      els.chartColumnChecklist.innerHTML = eligibleColumns.map((column, index) => {
+        const id = `chart-column-${hashString(column)}-${index}`;
+        return `<label for="${id}" title="${escapeAttr(getColumnOptionLabel(column))}">
+          <input id="${id}" type="checkbox" value="${escapeAttr(column)}" ${selected.has(column) ? 'checked' : ''}>
+          <span>${escapeHtml(column)}</span>
+          <small>${escapeHtml(getColumnOptionLabel(column, true))}</small>
+        </label>`;
+      }).join('');
+      els.chartColumnChecklist.querySelectorAll('input[type="checkbox"]').forEach(input => {
+        input.addEventListener('change', event => {
+          if (event.target.checked) state.selectedChartColumns.add(event.target.value);
+          else state.selectedChartColumns.delete(event.target.value);
+          updateChartGenerationControls();
+        });
+      });
+    }
+
+    const selectedCount = selected.size;
+    els.selectAllCharts.checked = eligibleColumns.length > 0 && selectedCount === eligibleColumns.length;
+    els.selectAllCharts.indeterminate = selectedCount > 0 && selectedCount < eligibleColumns.length;
+    updateChartGenerationControls();
+  }
+
+  function updateChartGenerationControls() {
+    if (!els.selectedChartCount || !els.generateSelectedChartsBtn) return;
+    const selectedCount = state.selectedChartColumns.size;
+    els.selectedChartCount.textContent = `${selectedCount} chart${selectedCount === 1 ? '' : 's'} selected`;
+    if (els.selectAllCharts) {
+      els.selectAllCharts.checked = state.eligibleChartColumns.length > 0
+        && selectedCount === state.eligibleChartColumns.length;
+      els.selectAllCharts.indeterminate = selectedCount > 0
+        && selectedCount < state.eligibleChartColumns.length;
+    }
+    els.generateSelectedChartsBtn.disabled = state.chartGenerationInProgress
+      || !state.allRows.length
+      || selectedCount === 0;
+  }
+
+  function showChartGenerationStatus(message, type = '') {
+    if (!els.chartGenerationStatus) return;
+    els.chartGenerationStatus.textContent = message;
+    els.chartGenerationStatus.className = `status-message ${type}`.trim();
   }
 
   function createChartConfig(sourceConfig) {
@@ -519,6 +600,13 @@
   function renderAllCharts() {
     renderChartEligibilitySummary();
     els.chartGrid.innerHTML = '';
+    if (!state.charts.length && state.allRows.length) {
+      const message = state.eligibleChartColumns.length
+        ? '<strong>No charts generated yet.</strong><span>Select one or more eligible columns above, then choose Generate Selected Charts.</span>'
+        : '<strong>No eligible chart columns found.</strong><span>Charts require between two and 15 unique responses; metadata and open-ended columns are excluded.</span>';
+      els.chartGrid.innerHTML = `<div class="chart-results-empty">${message}</div>`;
+      return;
+    }
     state.charts.forEach(chart => {
       const card = renderChartCard(chart);
       els.chartGrid.appendChild(card);
@@ -1649,7 +1737,8 @@
     const source = getSelectedReportSource();
     const sheetName = els.reportDataSheetSelect.value;
     const primaryColumns = source && sheetName ? getSheetColumns(source.workbook, sheetName) : [];
-    const dataRows = source && sheetName ? getReportDataRows(source, sheetName) : [];
+    const reportData = source && sheetName ? getLinkedReportData(source, sheetName) : { rows: [], column: '' };
+    const dataRows = reportData.rows;
     const columns = dataRows.length ? Object.keys(dataRows[0]).filter(column => !column.startsWith('__')) : primaryColumns;
     const columnStats = columns.map(column => ({
       column,
@@ -1663,7 +1752,8 @@
     const eligibleColumns = columnStats
       .filter(item => item.uniqueCount > 0 && item.uniqueCount <= REPORT_UNIQUE_VALUE_LIMIT)
       .map(item => item.column);
-    const linkedColumn = isLinkedReportContext(source, sheetName) ? state.linkedSurvey.column : '';
+    const linkedColumn = reportData.column;
+    if (isLinkedReportContext(source, sheetName)) state.linkedSurvey.column = linkedColumn;
     const eligibleBreakdownColumns = uniqueList([...eligibleColumns, linkedColumn].filter(Boolean));
     const eligibleQuestionColumns = eligibleColumns.filter(column => column !== linkedColumn);
     const eligibleFilterColumns = filterColumnStats
@@ -2111,11 +2201,20 @@
   }
 
   function getReportDataRows(source, sheetName) {
-    if (!isLinkedReportContext(source, sheetName)) return getSheetRecords(source.workbook, sheetName);
-    if (state.linkedSurvey.question) {
-      return LinkedSurvey.enrichMatchedRows(state.linkedSurvey.result, state.linkedSurvey.question).rows;
+    return getLinkedReportData(source, sheetName).rows;
+  }
+
+  function getLinkedReportData(source, sheetName) {
+    if (!isLinkedReportContext(source, sheetName)) {
+      return { rows: getSheetRecords(source.workbook, sheetName), column: '' };
     }
-    return state.linkedSurvey.result.matched.map(match => ({ ...match.primary, __linkedSiteKey: match.key }));
+    if (state.linkedSurvey.question) {
+      return LinkedSurvey.enrichMatchedRows(state.linkedSurvey.result, state.linkedSurvey.question);
+    }
+    return {
+      rows: state.linkedSurvey.result.matched.map(match => ({ ...match.primary, __linkedSiteKey: match.key })),
+      column: ''
+    };
   }
 
   function getSheetMatrix(workbook, sheetName) {
@@ -2322,6 +2421,10 @@
       }
     }
     state.columns = linked.active && linked.column ? [...eligible, linked.column] : eligible;
+    state.eligibleChartColumns = ChartRules.getEligibleChartColumns(analysisRows, state.columns, {
+      maxUniqueValues: CHART_UNIQUE_VALUE_LIMIT,
+      hiddenColumns: state.hiddenAnalysisColumns
+    });
     state.rows = analysisRows.map(row => ({ ...pickRecordColumns(row, state.columns), __linkedSiteKey: row.__linkedSiteKey || '' }));
     state.excludedChartColumns = state.allColumns.filter(column => !eligible.includes(column));
   }
@@ -2573,8 +2676,13 @@
     state.sheetName = '';
     state.rows = [];
     state.columns = [];
+    state.allRows = [];
+    state.allColumns = [];
     state.rawColumnCount = 0;
     state.excludedChartColumns = [];
+    state.eligibleChartColumns = [];
+    state.selectedChartColumns = new Set();
+    state.chartGenerationInProgress = false;
     state.charts.forEach(chart => {
       if (chart.chartInstance) chart.chartInstance.destroy();
     });
@@ -2591,6 +2699,7 @@
       column: ''
     };
     els.chartGrid.innerHTML = '';
+    showChartGenerationStatus('', '');
     els.fileStats.innerHTML = '';
     els.reportOutputTitle.textContent = 'No report generated yet';
     els.reportOutputMeta.textContent = 'Select questions and generate a breakdown report.';

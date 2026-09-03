@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#087f73">
   <title>Survey Response Analyzer</title>
-  <link rel="stylesheet" href="style.css?v=20260805-1">
+  <link rel="stylesheet" href="style.css?v=20260903-1">
 </head>
 <body>
   <header class="app-header">
@@ -161,15 +161,30 @@
       <div class="section-heading dashboard-heading">
         <div>
           <p class="eyebrow">Chart workspace</p>
-          <h2 id="dashboard-title">Explore your survey responses</h2>
-          <p id="dashboardHint">Choose a survey question, configure the analysis, then export the result.</p>
+          <h2 id="dashboard-title">Eligible Charts</h2>
+          <p id="dashboardHint">Choose the survey columns you want to generate, then configure each chart below.</p>
           <p id="chartEligibilityHint" class="dashboard-rule-note"></p>
         </div>
         <div class="dashboard-actions">
-          <button id="generateAllChartsBtn" class="secondary-btn" type="button">Generate all eligible charts</button>
+          <button id="generateSelectedChartsBtn" class="primary-btn" type="button">Generate Selected Charts</button>
           <button id="addChartBtn" class="primary-btn" type="button">+ Add chart</button>
         </div>
       </div>
+      <section class="chart-selection-panel" aria-labelledby="chart-selection-title">
+        <div class="chart-selection-heading">
+          <div>
+            <h3 id="chart-selection-title">Choose chart columns</h3>
+            <p>Select one or more eligible columns. Existing charts are not duplicated.</p>
+          </div>
+          <label class="select-all-charts">
+            <input id="selectAllCharts" type="checkbox" aria-controls="chartColumnChecklist">
+            <span>Select all</span>
+          </label>
+        </div>
+        <div id="chartColumnChecklist" class="chart-column-checklist" role="group" aria-label="Eligible chart columns"></div>
+        <div class="selection-count-row"><strong id="selectedChartCount">0 charts selected</strong></div>
+        <div id="chartGenerationStatus" class="status-message" role="status" aria-live="polite"></div>
+      </section>
       <div id="chartGrid" class="chart-grid"></div>
     </section>
 
@@ -463,8 +478,8 @@
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
-  <script src="chart-rules.js?v=20260827-1"></script>
-  <script src="linked-survey.js?v=20260805-1"></script>
-  <script src="script.js?v=20260827-1"></script>
+  <script src="chart-rules.js?v=20260903-1"></script>
+  <script src="linked-survey.js?v=20260903-1"></script>
+  <script src="script.js?v=20260903-1"></script>
 </body>
 </html>
