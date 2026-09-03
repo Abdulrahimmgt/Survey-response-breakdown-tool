@@ -16,6 +16,9 @@
   const CHART_MUTED = rootStyles.getPropertyValue('--chart-muted').trim();
   const CHART_GRID = rootStyles.getPropertyValue('--chart-grid').trim();
   const CHART_ON_COLOR = rootStyles.getPropertyValue('--chart-on-color').trim();
+  const sheetMatrixCache = new WeakMap();
+  const sheetRecordsCache = new WeakMap();
+  const WORKBOOK_PARSE_OPTIONS = { type: 'array', cellDates: true, raw: false };
   const ANSWER_SETS = [
     ['Strongly disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly agree'],
     ['Not at all', 'Not really', 'Kind of', 'Definitely', 'Absolutely'],
@@ -55,6 +58,7 @@
     allColumns: [],
     hiddenAnalysisColumns: new Set(),
     columnStats: new Map(),
+    chartUniqueCounts: new Map(),
     rawColumnCount: 0,
     excludedChartColumns: [],
     eligibleChartColumns: [],
@@ -262,6 +266,96 @@
     await loadFile(file);
   }
 
+  function yieldToBrowser() {
+    return new Promise(resolve => window.setTimeout(resolve, 0));
+  }
+
+  function parseCsvWorkbook(buffer) {
+    const bytes = new Uint8Array(buffer);
+    const encoding = bytes[0] === 0xff && bytes[1] === 0xfe ? 'utf-16le'
+      : (bytes[0] === 0xfe && bytes[1] === 0xff ? 'utf-16be' : 'utf-8');
+    const text = new TextDecoder(encoding).decode(buffer).replace(/^\uFEFF/, '');
+    const rows = [];
+    let row = [];
+    let field = '';
+    let quoted = false;
+
+    for (let index = 0; index < text.length; index += 1) {
+      const character = text[index];
+      if (quoted) {
+        if (character === '"' && text[index + 1] === '"') {
+          field += '"';
+          index += 1;
+        } else if (character === '"') {
+          quoted = false;
+        } else {
+          field += character;
+        }
+      } else if (character === '"' && field === '') {
+        quoted = true;
+      } else if (character === ',') {
+        row.push(field);
+        field = '';
+      } else if (character === '\n' || character === '\r') {
+        if (character === '\r' && text[index + 1] === '\n') index += 1;
+        row.push(field);
+        if (row.some(value => value !== '')) rows.push(row);
+        row = [];
+        field = '';
+      } else {
+        field += character;
+      }
+    }
+
+    if (field || row.length) {
+      row.push(field);
+      if (row.some(value => value !== '')) rows.push(row);
+    }
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), 'Sheet1');
+    return workbook;
+  }
+
+  function parseWorkbook(buffer, extension = '') {
+    if (extension === 'csv') return Promise.resolve(parseCsvWorkbook(buffer));
+    if (typeof Worker === 'undefined') return Promise.resolve(XLSX.read(buffer, WORKBOOK_PARSE_OPTIONS));
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const worker = new Worker('data-worker.js?v=20260903-2');
+      const finish = callback => value => {
+        if (settled) return;
+        settled = true;
+        worker.terminate();
+        callback(value);
+      };
+      const fallbackToMainThread = finish(value => {
+        try {
+          resolve(XLSX.read(buffer, WORKBOOK_PARSE_OPTIONS));
+        } catch (error) {
+          reject(error);
+        }
+      });
+
+      worker.onmessage = event => {
+        if (event.data?.type === 'success') {
+          finish(resolve)(event.data.workbook);
+        } else {
+          fallbackToMainThread();
+        }
+      };
+      worker.onerror = fallbackToMainThread;
+
+      try {
+        const transferableBuffer = buffer.slice(0);
+        worker.postMessage({ buffer: transferableBuffer }, [transferableBuffer]);
+      } catch (error) {
+        fallbackToMainThread(error);
+      }
+    });
+  }
+
   async function loadFile(file) {
 
     const extension = file.name.split('.').pop().toLowerCase();
@@ -276,11 +370,9 @@
 
     try {
       const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, {
-        type: 'array',
-        cellDates: true,
-        raw: false
-      });
+      const workbook = await parseWorkbook(buffer, extension);
+      showStatus('Analyzing rows and columns...', 'loading');
+      await yieldToBrowser();
 
       if (!workbook.SheetNames.length) {
         throw new Error('No sheets were found in this file.');
@@ -319,12 +411,7 @@
   }
 
   function loadSheet(sheetName) {
-    const sheet = state.workbook.Sheets[sheetName];
-    const rawRows = XLSX.utils.sheet_to_json(sheet, {
-      header: 1,
-      defval: '',
-      blankrows: false
-    }).filter(row => row.some(cell => normalizeValue(cell) !== ''));
+    const rawRows = getSheetMatrix(state.workbook, sheetName);
 
     state.sheetName = sheetName;
     state.rows = [];
@@ -333,12 +420,11 @@
     state.allColumns = [];
     state.hiddenAnalysisColumns = new Set();
     state.columnStats = new Map();
-    state.allRows = [];
-    state.allColumns = [];
-    state.hiddenAnalysisColumns = new Set();
-    state.columnStats = new Map();
     state.rawColumnCount = 0;
+    state.chartUniqueCounts = new Map();
     state.excludedChartColumns = [];
+    state.eligibleChartColumns = [];
+    state.selectedChartColumns = new Set();
     const hadLinkedSurvey = Boolean(state.linkedSurvey.result);
     resetLinkedSurveyMatch();
     if (hadLinkedSurvey) invalidateGeneratedReport();
@@ -351,7 +437,6 @@
 
     const allColumns = makeUniqueHeaders(rawRows[0]);
     const allRows = rawRows.slice(1)
-      .filter(row => row.some(cell => normalizeValue(cell) !== ''))
       .map(row => {
         const record = {};
         allColumns.forEach((column, index) => {
@@ -359,8 +444,11 @@
         });
         return record;
       });
+    const columnStats = buildColumnStats(allRows, allColumns);
+    const chartUniqueCounts = new Map(Array.from(columnStats, ([column, stats]) => [column, stats.chartUniqueCount]));
     const chartColumns = ChartRules.getEligibleChartColumns(allRows, allColumns, {
-      maxUniqueValues: CHART_UNIQUE_VALUE_LIMIT
+      maxUniqueValues: CHART_UNIQUE_VALUE_LIMIT,
+      uniqueCounts: chartUniqueCounts
     });
 
     state.rawColumnCount = allColumns.length;
@@ -369,7 +457,8 @@
     state.selectedChartColumns = new Set();
     state.allColumns = allColumns;
     state.allRows = allRows;
-    state.columnStats = buildColumnStats(allRows, allColumns);
+    state.columnStats = columnStats;
+    state.chartUniqueCounts = chartUniqueCounts;
     updateAnalysisColumns();
 
     state.charts = [];
@@ -1430,7 +1519,7 @@
     }
     showLinkValidation('Reading the secondary survey...', 'loading');
     try {
-      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true, raw: false });
+      const workbook = await parseWorkbook(await file.arrayBuffer(), extension);
       if (!workbook.SheetNames.length) throw new Error('No sheets were found in the secondary file.');
       clearSurveyLink(false);
       state.linkedSurvey.secondaryWorkbook = workbook;
@@ -1652,11 +1741,7 @@
       const response = await fetch(exportUrl);
       if (!response.ok) throw new Error(`Google Sheets returned ${response.status}`);
       const buffer = await response.arrayBuffer();
-      const workbook = XLSX.read(buffer, {
-        type: 'array',
-        cellDates: true,
-        raw: false
-      });
+      const workbook = await parseWorkbook(buffer);
       if (!workbook.SheetNames.length) throw new Error('No sheets found');
       const sourceName = `Google Sheet: ${sheetId.slice(0, 8)}...`;
       upsertReportSource(`google-${sheetId}`, sourceName, workbook);
@@ -1740,14 +1825,16 @@
     const reportData = source && sheetName ? getLinkedReportData(source, sheetName) : { rows: [], column: '' };
     const dataRows = reportData.rows;
     const columns = dataRows.length ? Object.keys(dataRows[0]).filter(column => !column.startsWith('__')) : primaryColumns;
+    const reportValuesByColumn = new Map(columns.map(column => [column, getReportUniqueValues(dataRows, column)]));
+    const reportFilterValuesByColumn = new Map(columns.map(column => [column, getReportFilterValues(dataRows, column)]));
     const columnStats = columns.map(column => ({
       column,
-      uniqueCount: getReportUniqueValues(dataRows, column).length
+      uniqueCount: reportValuesByColumn.get(column).length
     }));
     const filterColumnStats = columns.map(column => ({
       column,
-      nonBlankUniqueCount: getReportUniqueValues(dataRows, column).length,
-      uniqueCount: getReportFilterValues(dataRows, column).length
+      nonBlankUniqueCount: reportValuesByColumn.get(column).length,
+      uniqueCount: reportFilterValuesByColumn.get(column).length
     }));
     const eligibleColumns = columnStats
       .filter(item => item.uniqueCount > 0 && item.uniqueCount <= REPORT_UNIQUE_VALUE_LIMIT)
@@ -2178,11 +2265,17 @@
   }
 
   function getSheetRecords(workbook, sheetName) {
+    let workbookRecords = sheetRecordsCache.get(workbook);
+    if (!workbookRecords) {
+      workbookRecords = new Map();
+      sheetRecordsCache.set(workbook, workbookRecords);
+    }
+    if (workbookRecords.has(sheetName)) return workbookRecords.get(sheetName);
+
     const rows = getSheetMatrix(workbook, sheetName);
     const headerRow = findHeaderRow(rows);
     const headers = rows[headerRow] ? makeUniqueHeaders(rows[headerRow]) : [];
-    return rows.slice(headerRow + 1)
-      .filter(row => row.some(cell => normalizeValue(cell) !== ''))
+    const records = rows.slice(headerRow + 1)
       .map(row => {
         const record = {};
         headers.forEach((header, index) => {
@@ -2190,6 +2283,8 @@
         });
         return record;
       });
+    workbookRecords.set(sheetName, records);
+    return records;
   }
 
   function isLinkedReportContext(source, sheetName) {
@@ -2218,13 +2313,22 @@
   }
 
   function getSheetMatrix(workbook, sheetName) {
+    let workbookSheets = sheetMatrixCache.get(workbook);
+    if (!workbookSheets) {
+      workbookSheets = new Map();
+      sheetMatrixCache.set(workbook, workbookSheets);
+    }
+    if (workbookSheets.has(sheetName)) return workbookSheets.get(sheetName);
+
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) return [];
-    return XLSX.utils.sheet_to_json(sheet, {
+    const matrix = XLSX.utils.sheet_to_json(sheet, {
       header: 1,
       defval: '',
       blankrows: false
     }).filter(row => row.some(cell => normalizeValue(cell) !== ''));
+    workbookSheets.set(sheetName, matrix);
+    return matrix;
   }
 
   function findHeaderRow(rows) {
@@ -2375,18 +2479,36 @@
   }
 
   function buildColumnStats(rows, columns) {
-    return new Map(columns.map(column => {
-      const values = rows.map(row => row[column]);
-      const normalized = values.map(normalizeValue);
-      const answered = normalized.filter(Boolean);
-      const uniqueCount = new Set(answered).size;
-      return [column, {
-        type: detectDataType(values),
-        answeredCount: answered.length,
-        uniqueCount,
-        missingCount: rows.length - answered.length
-      }];
+    const metrics = new Map(columns.map(column => [column, {
+      values: [],
+      answeredCount: 0,
+      uniqueValues: new Set(),
+      uniqueAnswers: new Set()
+    }]));
+    rows.forEach(row => columns.forEach(column => {
+      const metric = metrics.get(column);
+      const value = row[column];
+      const normalized = normalizeValue(value);
+      metric.values.push(value);
+      if (normalized) {
+        metric.answeredCount += 1;
+        metric.uniqueValues.add(normalized);
+      }
+      getChartAnswerLabels(value).forEach(label => metric.uniqueAnswers.add(normalizeForMatch(label)));
     }));
+
+    return new Map(Array.from(metrics, ([column, metric]) => [column, {
+      type: detectDataType(metric.values),
+      answeredCount: metric.answeredCount,
+      uniqueCount: metric.uniqueValues.size,
+      chartUniqueCount: metric.uniqueAnswers.size,
+      missingCount: rows.length - metric.answeredCount
+    }]));
+  }
+
+  function getChartAnswerLabels(value) {
+    const values = Array.isArray(value) ? value.flatMap(getChartAnswerLabels) : [normalizeValue(value)];
+    return values.filter(Boolean);
   }
 
   function detectDataType(values) {
@@ -2401,7 +2523,8 @@
   function updateAnalysisColumns() {
     const eligible = ChartRules.getEligibleChartColumns(state.allRows, state.allColumns, {
       maxUniqueValues: CHART_UNIQUE_VALUE_LIMIT,
-      hiddenColumns: state.hiddenAnalysisColumns
+      hiddenColumns: state.hiddenAnalysisColumns,
+      uniqueCounts: state.chartUniqueCounts
     });
     let analysisRows = state.allRows;
     const linked = state.linkedSurvey;
@@ -2421,10 +2544,12 @@
       }
     }
     state.columns = linked.active && linked.column ? [...eligible, linked.column] : eligible;
-    state.eligibleChartColumns = ChartRules.getEligibleChartColumns(analysisRows, state.columns, {
-      maxUniqueValues: CHART_UNIQUE_VALUE_LIMIT,
-      hiddenColumns: state.hiddenAnalysisColumns
-    });
+    state.eligibleChartColumns = linked.active && linked.column
+      ? ChartRules.getEligibleChartColumns(analysisRows, state.columns, {
+        maxUniqueValues: CHART_UNIQUE_VALUE_LIMIT,
+        hiddenColumns: state.hiddenAnalysisColumns
+      })
+      : eligible;
     state.rows = analysisRows.map(row => ({ ...pickRecordColumns(row, state.columns), __linkedSiteKey: row.__linkedSiteKey || '' }));
     state.excludedChartColumns = state.allColumns.filter(column => !eligible.includes(column));
   }
@@ -2520,9 +2645,7 @@
       ['Missing cells', formatNumber(missingCells)]
     ].map(([label, value]) => `<div class="preview-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
 
-    const eligibleChartColumns = new Set(ChartRules.getEligibleChartColumns(state.allRows, state.allColumns, {
-      maxUniqueValues: CHART_UNIQUE_VALUE_LIMIT
-    }));
+    const eligibleChartColumns = new Set(state.allColumns.filter(column => !state.excludedChartColumns.includes(column)));
     els.columnProfiles.innerHTML = state.allColumns.map(column => {
       const stats = state.columnStats.get(column);
       const automaticallyExcluded = !eligibleChartColumns.has(column);
@@ -2679,6 +2802,7 @@
     state.allRows = [];
     state.allColumns = [];
     state.rawColumnCount = 0;
+    state.chartUniqueCounts = new Map();
     state.excludedChartColumns = [];
     state.eligibleChartColumns = [];
     state.selectedChartColumns = new Set();

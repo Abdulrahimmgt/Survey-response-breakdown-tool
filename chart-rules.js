@@ -58,11 +58,16 @@
     const minUniqueValues = options.minUniqueValues ?? DEFAULT_MIN_UNIQUE_VALUES;
     const hiddenColumns = options.hiddenColumns instanceof Set ? options.hiddenColumns : new Set(options.hiddenColumns || []);
     const includeMetadata = options.includeMetadata === true;
+    const uniqueCounts = options.uniqueCounts && typeof options.uniqueCounts.has === 'function'
+      ? options.uniqueCounts
+      : null;
 
     return columns.filter(column => {
       if (hiddenColumns.has(column)) return false;
       if (!includeMetadata && isLikelyMetadataColumn(column)) return false;
-      const uniqueCount = countUniqueAnswers(rows, column);
+      const uniqueCount = uniqueCounts?.has(column)
+        ? uniqueCounts.get(column)
+        : countUniqueAnswers(rows, column);
       return uniqueCount >= minUniqueValues && uniqueCount <= maxUniqueValues;
     });
   }

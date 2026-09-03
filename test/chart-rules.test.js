@@ -83,6 +83,16 @@ test('returns selected chart columns in eligible-column order', () => {
   );
 });
 
+test('uses supplied unique counts without rescanning rows', () => {
+  const rows = [{ Question: 'Yes' }, { Question: 'No' }];
+  const uniqueCounts = new Map([['Question', 99]]);
+
+  assert.deepEqual(
+    Array.from(ChartRules.getEligibleChartColumns(rows, ['Question'], { uniqueCounts })),
+    []
+  );
+});
+
 test('supports linked multi-select values when determining eligibility', () => {
   const rows = [
     { Strategies: ['Tutoring', 'Mentoring'] },
