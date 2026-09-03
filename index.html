@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#087f73">
   <title>Survey Response Analyzer</title>
-  <link rel="stylesheet" href="style.css?v=20260903-1">
+  <link rel="stylesheet" href="style.css?v=20260903-2">
 </head>
 <body>
   <header class="app-header">
@@ -174,14 +174,14 @@
         <div class="chart-selection-heading">
           <div>
             <h3 id="chart-selection-title">Choose chart columns</h3>
-            <p>Select one or more eligible columns. Existing charts are not duplicated.</p>
+            <p>Select one or more response columns. Existing charts are not duplicated.</p>
           </div>
           <label class="select-all-charts">
             <input id="selectAllCharts" type="checkbox" aria-controls="chartColumnChecklist">
             <span>Select all</span>
           </label>
         </div>
-        <div id="chartColumnChecklist" class="chart-column-checklist" role="group" aria-label="Eligible chart columns"></div>
+        <div id="chartColumnChecklist" class="chart-column-checklist" role="group" aria-label="Selectable chart columns"></div>
         <div class="selection-count-row"><strong id="selectedChartCount">0 charts selected</strong></div>
         <div id="chartGenerationStatus" class="status-message" role="status" aria-live="polite"></div>
       </section>
@@ -336,6 +336,18 @@
           <div class="chart-meta"><span class="valid-response-count">0 valid responses</span><span class="category-count">0 categories</span><span class="analysis-summary">No filters</span></div>
         </div>
         <div class="icon-actions">
+          <label class="chart-type-quick" title="Choose how this chart is displayed">
+            <span>View</span>
+            <select class="chart-type" aria-label="Chart type">
+              <option value="auto">Auto</option>
+              <option value="horizontalBar">Horizontal bar</option>
+              <option value="bar">Vertical bar</option>
+              <option value="pie">Pie</option>
+              <option value="doughnut">Doughnut</option>
+              <option value="line">Line</option>
+              <option value="table">Table only</option>
+            </select>
+          </label>
           <button class="icon-btn duplicate-chart" type="button" title="Duplicate chart" aria-label="Duplicate chart">⧉</button>
           <button class="icon-btn collapse-chart" type="button" title="Collapse chart" aria-label="Collapse chart">−</button>
           <details class="menu-details chart-more-menu">
@@ -372,22 +384,11 @@
 
               <div class="workflow-step">
                 <div class="step-label"><span>2</span><div><strong>Configure analysis</strong><small>Choose how to display results</small></div></div>
-                <label class="field single-setting">
-                  <span>Chart type</span>
-                  <select class="chart-type">
-                    <option value="auto">Auto (recommended)</option>
-                    <option value="horizontalBar">Horizontal bar chart</option>
-                    <option value="bar">Vertical bar chart</option>
-                    <option value="pie">Pie chart</option>
-                    <option value="doughnut">Doughnut chart</option>
-                    <option value="line">Line chart</option>
-                    <option value="table">Table only</option>
-                  </select>
-                </label>
                 <label class="field">
                   <span>Compare by</span>
                   <select class="compare-column"></select>
                 </label>
+                <small class="field-help">For stacked charts, choose a comparison column, then select Stacked bar chart below.</small>
                 <label class="field compare-setting hidden">
                   <span>Comparison view</span>
                   <select class="compare-type">

@@ -3,7 +3,6 @@
 
   const NO_RESPONSE = 'No Response';
   const TABLE_ROW_LIMIT = 10;
-  const CHART_UNIQUE_VALUE_LIMIT = ChartRules.DEFAULT_MAX_UNIQUE_VALUES;
   const CHART_RESPONSE_DISPLAY_LIMIT = ChartRules.DEFAULT_MAX_UNIQUE_VALUES;
   const REPORT_UNIQUE_VALUE_LIMIT = 15;
   const REPORT_FILTER_UNIQUE_VALUE_LIMIT = 500;
@@ -58,7 +57,6 @@
     allColumns: [],
     hiddenAnalysisColumns: new Set(),
     columnStats: new Map(),
-    chartUniqueCounts: new Map(),
     rawColumnCount: 0,
     excludedChartColumns: [],
     eligibleChartColumns: [],
@@ -421,7 +419,6 @@
     state.hiddenAnalysisColumns = new Set();
     state.columnStats = new Map();
     state.rawColumnCount = 0;
-    state.chartUniqueCounts = new Map();
     state.excludedChartColumns = [];
     state.eligibleChartColumns = [];
     state.selectedChartColumns = new Set();
@@ -445,11 +442,7 @@
         return record;
       });
     const columnStats = buildColumnStats(allRows, allColumns);
-    const chartUniqueCounts = new Map(Array.from(columnStats, ([column, stats]) => [column, stats.chartUniqueCount]));
-    const chartColumns = ChartRules.getEligibleChartColumns(allRows, allColumns, {
-      maxUniqueValues: CHART_UNIQUE_VALUE_LIMIT,
-      uniqueCounts: chartUniqueCounts
-    });
+    const chartColumns = ChartRules.getSelectableChartColumns(allColumns);
 
     state.rawColumnCount = allColumns.length;
     state.excludedChartColumns = allColumns.filter(column => !chartColumns.includes(column));
@@ -458,7 +451,6 @@
     state.allColumns = allColumns;
     state.allRows = allRows;
     state.columnStats = columnStats;
-    state.chartUniqueCounts = chartUniqueCounts;
     updateAnalysisColumns();
 
     state.charts = [];
@@ -528,7 +520,7 @@
     if (state.chartGenerationInProgress) return;
     const selectedColumns = ChartRules.getSelectedChartColumns(state.eligibleChartColumns, state.selectedChartColumns);
     if (!selectedColumns.length) {
-      showChartGenerationStatus('Select at least one eligible column before generating charts.', 'warning');
+      showChartGenerationStatus('Select at least one response column before generating charts.', 'warning');
       showToast('Select at least one chart column.', 'warning');
       return;
     }
@@ -582,7 +574,7 @@
     if (!els.chartEligibilityHint) return;
     const eligibleCount = state.eligibleChartColumns.length;
     els.chartEligibilityHint.textContent = state.allRows.length
-      ? `${formatNumber(eligibleCount)} eligible question${eligibleCount === 1 ? '' : 's'} · ${ChartRules.DEFAULT_MIN_UNIQUE_VALUES}–${CHART_UNIQUE_VALUE_LIMIT} unique responses · metadata excluded`
+      ? `${formatNumber(eligibleCount)} selectable question${eligibleCount === 1 ? '' : 's'} · choose any response column · metadata excluded`
       : '';
     renderChartSelection();
   }
@@ -594,7 +586,7 @@
     state.selectedChartColumns = selected;
 
     if (!eligibleColumns.length) {
-      els.chartColumnChecklist.innerHTML = '<div class="checklist-empty">No chart-ready columns were found in this dataset.</div>';
+      els.chartColumnChecklist.innerHTML = '<div class="checklist-empty">No response columns were found in this dataset.</div>';
     } else {
       els.chartColumnChecklist.innerHTML = eligibleColumns.map((column, index) => {
         const id = `chart-column-${hashString(column)}-${index}`;
@@ -691,8 +683,8 @@
     els.chartGrid.innerHTML = '';
     if (!state.charts.length && state.allRows.length) {
       const message = state.eligibleChartColumns.length
-        ? '<strong>No charts generated yet.</strong><span>Select one or more eligible columns above, then choose Generate Selected Charts.</span>'
-        : '<strong>No eligible chart columns found.</strong><span>Charts require between two and 15 unique responses; metadata and open-ended columns are excluded.</span>';
+        ? '<strong>No charts generated yet.</strong><span>Select one or more response columns above, then choose Generate Selected Charts.</span>'
+        : '<strong>No selectable chart columns found.</strong><span>Metadata columns are excluded; choose any remaining column to generate a chart.</span>';
       els.chartGrid.innerHTML = `<div class="chart-results-empty">${message}</div>`;
       return;
     }
@@ -2486,8 +2478,7 @@
     const metrics = new Map(columns.map(column => [column, {
       values: [],
       answeredCount: 0,
-      uniqueValues: new Set(),
-      uniqueAnswers: new Set()
+      uniqueValues: new Set()
     }]));
     rows.forEach(row => columns.forEach(column => {
       const metric = metrics.get(column);
@@ -2498,22 +2489,16 @@
         metric.answeredCount += 1;
         metric.uniqueValues.add(normalized);
       }
-      getChartAnswerLabels(value).forEach(label => metric.uniqueAnswers.add(normalizeForMatch(label)));
     }));
 
     return new Map(Array.from(metrics, ([column, metric]) => [column, {
       type: detectDataType(metric.values),
       answeredCount: metric.answeredCount,
       uniqueCount: metric.uniqueValues.size,
-      chartUniqueCount: metric.uniqueAnswers.size,
       missingCount: rows.length - metric.answeredCount
     }]));
   }
 
-  function getChartAnswerLabels(value) {
-    const values = Array.isArray(value) ? value.flatMap(getChartAnswerLabels) : [normalizeValue(value)];
-    return values.filter(Boolean);
-  }
 
   function detectDataType(values) {
     const populated = values.filter(value => normalizeValue(value) !== '');
@@ -2525,10 +2510,8 @@
   }
 
   function updateAnalysisColumns() {
-    const eligible = ChartRules.getEligibleChartColumns(state.allRows, state.allColumns, {
-      maxUniqueValues: CHART_UNIQUE_VALUE_LIMIT,
-      hiddenColumns: state.hiddenAnalysisColumns,
-      uniqueCounts: state.chartUniqueCounts
+    const eligible = ChartRules.getSelectableChartColumns(state.allColumns, {
+      hiddenColumns: state.hiddenAnalysisColumns
     });
     let analysisRows = state.allRows;
     const linked = state.linkedSurvey;
@@ -2549,10 +2532,7 @@
     }
     state.columns = linked.active && linked.column ? [...eligible, linked.column] : eligible;
     state.eligibleChartColumns = linked.active && linked.column
-      ? ChartRules.getEligibleChartColumns(analysisRows, state.columns, {
-        maxUniqueValues: CHART_UNIQUE_VALUE_LIMIT,
-        hiddenColumns: state.hiddenAnalysisColumns
-      })
+      ? ChartRules.getSelectableChartColumns(state.columns, { hiddenColumns: state.hiddenAnalysisColumns })
       : eligible;
     state.rows = analysisRows.map(row => ({ ...pickRecordColumns(row, state.columns), __linkedSiteKey: row.__linkedSiteKey || '' }));
     state.excludedChartColumns = state.allColumns.filter(column => !eligible.includes(column));
@@ -2656,7 +2636,7 @@
       const inAnalysis = state.columns.includes(column);
       const exclusionReason = isLikelyMetadataColumn(column)
         ? 'metadata column'
-        : (stats.uniqueCount === 0 ? 'empty column' : `more than ${CHART_UNIQUE_VALUE_LIMIT} unique values`);
+        : (state.hiddenAnalysisColumns.has(column) ? 'hidden from analysis' : 'not selectable');
       return `<div class="column-profile"><strong title="${escapeAttr(column)}">${escapeHtml(column)}</strong><label title="${automaticallyExcluded ? `Automatically excluded: ${exclusionReason}` : 'Show or hide this column in chart analysis'}"><input type="checkbox" data-analysis-column="${escapeAttr(column)}" aria-label="Analyze ${escapeAttr(column)}" ${inAnalysis ? 'checked' : ''} ${automaticallyExcluded ? 'disabled' : ''}> Analyze</label><small>${escapeHtml(stats.type)} · ${formatNumber(stats.uniqueCount)} unique · ${formatNumber(stats.missingCount)} missing${automaticallyExcluded ? ` · ${escapeHtml(exclusionReason)}` : ''}</small></div>`;
     }).join('');
     els.columnProfiles.querySelectorAll('input[data-analysis-column]').forEach(input => input.addEventListener('change', () => {
@@ -2806,7 +2786,6 @@
     state.allRows = [];
     state.allColumns = [];
     state.rawColumnCount = 0;
-    state.chartUniqueCounts = new Map();
     state.excludedChartColumns = [];
     state.eligibleChartColumns = [];
     state.selectedChartColumns = new Set();

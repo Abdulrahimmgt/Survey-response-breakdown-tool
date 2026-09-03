@@ -53,6 +53,13 @@
       || /date|timestamp|email|name|phone|address/i.test(text(column));
   }
 
+  function getSelectableChartColumns(columns, options = {}) {
+    const hiddenColumns = options.hiddenColumns instanceof Set ? options.hiddenColumns : new Set(options.hiddenColumns || []);
+    const includeMetadata = options.includeMetadata === true;
+    return columns.filter(column => !hiddenColumns.has(column)
+      && (includeMetadata || !isLikelyMetadataColumn(column)));
+  }
+
   function getEligibleChartColumns(rows, columns, options = {}) {
     const maxUniqueValues = options.maxUniqueValues ?? DEFAULT_MAX_UNIQUE_VALUES;
     const minUniqueValues = options.minUniqueValues ?? DEFAULT_MIN_UNIQUE_VALUES;
@@ -62,9 +69,7 @@
       ? options.uniqueCounts
       : null;
 
-    return columns.filter(column => {
-      if (hiddenColumns.has(column)) return false;
-      if (!includeMetadata && isLikelyMetadataColumn(column)) return false;
+    return getSelectableChartColumns(columns, { hiddenColumns, includeMetadata }).filter(column => {
       const uniqueCount = uniqueCounts?.has(column)
         ? uniqueCounts.get(column)
         : countUniqueAnswers(rows, column);
@@ -89,6 +94,7 @@
     getDisplayAnswerLabel,
     getEligibleChartColumns,
     getMissingChartColumns,
+    getSelectableChartColumns,
     getSelectedChartColumns,
     isLikelyMetadataColumn,
     shouldUseYesNoLabels

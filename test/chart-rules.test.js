@@ -52,6 +52,19 @@ test('labels true binary zero-one responses as no and yes', () => {
   assert.equal(ChartRules.getDisplayAnswerLabel('0', [], true), 'No');
 });
 
+test('makes every non-metadata column selectable regardless of response count', () => {
+  const rows = [
+    { Single: 'Only answer', Open: 'One', Empty: '', 'Student ID': '1' },
+    { Single: '', Open: 'Two', Empty: '', 'Student ID': '2' },
+    { Single: '', Open: 'Three', Empty: '', 'Student ID': '3' }
+  ];
+
+  assert.deepEqual(
+    Array.from(ChartRules.getSelectableChartColumns(Object.keys(rows[0]))),
+    ['Single', 'Open', 'Empty']
+  );
+});
+
 test('excludes empty and likely metadata columns from automatic charts', () => {
   const rows = [
     { 'Student ID': '1', Email: 'a@example.com', Timestamp: '2026-01-01', Name: 'A', Empty: '', Rating: 'Good' },

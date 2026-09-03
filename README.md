@@ -8,8 +8,8 @@ A static web app for analyzing Excel, CSV, and public Google Sheets survey-style
 - Load a public Google Sheet that does not require sign-in.
 - Choose a sheet when an Excel file has multiple sheets.
 - Create multiple chart cards from the same file.
-- Hide empty, metadata, and open-ended-style columns from chart choices when they have more than 15 unique responses.
-- Choose one or more eligible questions and generate all selected charts with a single action, without duplicating charts already in the workspace.
+- Let users choose any non-metadata response column for a chart, including empty and open-ended-style columns.
+- Choose one or more response questions and generate all selected charts with a single action, without duplicating charts already in the workspace.
 - Analyze one column by response count and percentage.
 - Compare one column against another.
 - Add one or more checklist filters.
@@ -45,7 +45,7 @@ The app uses CDN links for:
 
 ## Eligible chart selection
 
-The Charts workspace lists every eligible question before generating anything. A chart-ready column must contain at least two and no more than 15 normalized unique responses. Likely metadata columns—including IDs, names, dates, timestamps, email addresses, phone numbers, and addresses—are excluded. Select individual questions or **Select all**, adjust the selection as needed, and choose **Generate Selected Charts**. Blank responses are not shown in generated charts. Existing charts are preserved, and repeating generation adds only selected questions that do not already have a chart.
+The Charts workspace lists every non-metadata response column before generating anything. Select individual questions or **Select all**, adjust the selection as needed, and choose **Generate Selected Charts**. Blank responses are not shown in generated charts. Existing charts are preserved, and repeating generation adds only selected questions that do not already have a chart. Each generated chart defaults to an automatic view, and its header **View** selector lets you switch to horizontal or vertical bars, pie, doughnut, line, or table-only output. For stacked charts, choose a comparison column in the chart settings and then select a stacked comparison view.
 
 ## Question Breakdown Report
 
