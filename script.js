@@ -983,9 +983,10 @@
     const counts = new Map();
     let nonBlank = 0;
     const columnLabels = getColumnNonBlankLabels(rows, chart.primaryColumn);
+    const useYesNoLabels = ChartRules.shouldUseYesNoLabels(columnLabels);
 
     rows.forEach(row => {
-      const originalLabels = getDisplayResponseLabelsForColumn(row[chart.primaryColumn], columnLabels);
+      const originalLabels = getDisplayResponseLabelsForColumn(row[chart.primaryColumn], columnLabels, useYesNoLabels);
       if (originalLabels.some(label => label !== NO_RESPONSE)) nonBlank += 1;
       originalLabels.forEach(originalLabel => {
         if (!chart.includeBlanks && originalLabel === NO_RESPONSE) return;
@@ -1020,10 +1021,12 @@
     let total = 0;
     const primaryColumnLabels = getColumnNonBlankLabels(rows, chart.primaryColumn);
     const compareColumnLabels = getColumnNonBlankLabels(rows, chart.compareColumn);
+    const usePrimaryYesNoLabels = ChartRules.shouldUseYesNoLabels(primaryColumnLabels);
+    const useCompareYesNoLabels = ChartRules.shouldUseYesNoLabels(compareColumnLabels);
 
     rows.forEach(row => {
-      const primaries = getDisplayResponseLabelsForColumn(row[chart.primaryColumn], primaryColumnLabels).map(label => getMergedLabel(label, chart.merges));
-      const comparisons = getDisplayResponseLabelsForColumn(row[chart.compareColumn], compareColumnLabels);
+      const primaries = getDisplayResponseLabelsForColumn(row[chart.primaryColumn], primaryColumnLabels, usePrimaryYesNoLabels).map(label => getMergedLabel(label, chart.merges));
+      const comparisons = getDisplayResponseLabelsForColumn(row[chart.compareColumn], compareColumnLabels, useCompareYesNoLabels);
       primaries.forEach(primary => comparisons.forEach(comparison => {
         if (!chart.includeBlanks && (primary === NO_RESPONSE || comparison === NO_RESPONSE)) return;
         if (chart.hiddenResponses.has(primary)) return;
@@ -1376,7 +1379,8 @@
 
   function getUniqueValues(rows, column) {
     const columnLabels = getColumnNonBlankLabels(rows, column);
-    return Array.from(new Set(rows.flatMap(row => getDisplayResponseLabelsForColumn(row[column], columnLabels))))
+    const useYesNoLabels = ChartRules.shouldUseYesNoLabels(columnLabels);
+    return Array.from(new Set(rows.flatMap(row => getDisplayResponseLabelsForColumn(row[column], columnLabels, useYesNoLabels))))
       .sort((a, b) => a.localeCompare(b));
   }
 
@@ -1384,9 +1388,9 @@
     return rows.flatMap(row => getResponseLabels(row[column])).filter(label => label !== NO_RESPONSE);
   }
 
-  function getDisplayResponseLabelsForColumn(value, nonBlankLabels) {
+  function getDisplayResponseLabelsForColumn(value, nonBlankLabels, useYesNoLabels = ChartRules.shouldUseYesNoLabels(nonBlankLabels)) {
     const labels = getResponseLabels(value);
-    return labels.map(label => ChartRules.getDisplayAnswerLabel(label, nonBlankLabels));
+    return labels.map(label => ChartRules.getDisplayAnswerLabel(label, nonBlankLabels, useYesNoLabels));
   }
 
   function getResponseLabels(value) {

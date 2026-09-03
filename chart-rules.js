@@ -40,8 +40,8 @@
     return normalized.size === 2 && normalized.has('0') && normalized.has('1');
   }
 
-  function getDisplayAnswerLabel(label, allLabels) {
-    if (!shouldUseYesNoLabels(allLabels)) return label;
+  function getDisplayAnswerLabel(label, allLabels, useYesNoLabels = null) {
+    if (!(useYesNoLabels ?? shouldUseYesNoLabels(allLabels))) return label;
     const normalized = normalizeAnswer(label);
     if (normalized === '0') return 'No';
     if (normalized === '1') return 'Yes';

@@ -48,6 +48,8 @@ test('labels true binary zero-one responses as no and yes', () => {
   assert.equal(ChartRules.getDisplayAnswerLabel('0', ['0', '1']), 'No');
   assert.equal(ChartRules.getDisplayAnswerLabel('1', ['0', '1']), 'Yes');
   assert.equal(ChartRules.getDisplayAnswerLabel('0', ['0', '1', '2']), '0');
+  assert.equal(ChartRules.getDisplayAnswerLabel('0', ['0', '1'], false), '0');
+  assert.equal(ChartRules.getDisplayAnswerLabel('0', [], true), 'No');
 });
 
 test('excludes empty and likely metadata columns from automatic charts', () => {
