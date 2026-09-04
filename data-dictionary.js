@@ -22,7 +22,7 @@
   }
 
   function isDictionarySheetName(sheetName) {
-    return keyText(sheetName) === 'data dictionary' || keyText(sheetName) === 'dictionary';
+    return keyText(sheetName) === 'data dictionary';
   }
 
   function isHeaderRow(row) {
