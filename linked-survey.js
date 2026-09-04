@@ -133,7 +133,7 @@
     if (linkResult.matched.some(match => !match.secondary || !(question in match.secondary))) {
       throw new Error('The selected secondary survey question is invalid.');
     }
-    const column = linkedColumnName(question, options.prefix);
+    const column = linkedColumnName(options.displayQuestion || question, options.prefix);
     const rows = linkResult.matched.map(match => ({
       ...match.primary,
       [column]: splitMultiSelect(match.secondary[question]),

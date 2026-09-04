@@ -16,7 +16,9 @@
   const CHART_GRID = rootStyles.getPropertyValue('--chart-grid').trim();
   const CHART_ON_COLOR = rootStyles.getPropertyValue('--chart-on-color').trim();
   const sheetMatrixCache = new WeakMap();
+  const sheetHeaderCache = new WeakMap();
   const sheetRecordsCache = new WeakMap();
+  const workbookDictionaryCache = new WeakMap();
   const WORKBOOK_PARSE_OPTIONS = { type: 'array', cellDates: true, raw: false };
   const ANSWER_SETS = [
     ['Strongly disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly agree'],
@@ -55,6 +57,7 @@
     columns: [],
     allRows: [],
     allColumns: [],
+    columnOriginalHeaders: new Map(),
     hiddenAnalysisColumns: new Set(),
     columnStats: new Map(),
     rawColumnCount: 0,
@@ -73,6 +76,7 @@
       active: false,
       secondaryWorkbook: null,
       secondaryFileName: '',
+      secondarySheet: '',
       result: null,
       question: '',
       column: ''
@@ -399,8 +403,10 @@
   function activateWorkbook(workbook, fileName, sheetName) {
     state.workbook = workbook;
     state.fileName = fileName;
-    populateSheetSelector(workbook.SheetNames);
-    loadSheet(sheetName || workbook.SheetNames[0]);
+    const surveySheets = getSurveySheetNames(workbook.SheetNames);
+    populateSheetSelector(surveySheets);
+    const initialSheet = surveySheets.includes(sheetName) ? sheetName : (surveySheets[0] || sheetName || workbook.SheetNames[0]);
+    loadSheet(initialSheet);
   }
 
   function populateSheetSelector(sheetNames) {
@@ -416,6 +422,7 @@
     state.columns = [];
     state.allRows = [];
     state.allColumns = [];
+    state.columnOriginalHeaders = new Map();
     state.hiddenAnalysisColumns = new Set();
     state.columnStats = new Map();
     state.rawColumnCount = 0;
@@ -432,7 +439,8 @@
       return;
     }
 
-    const allColumns = makeUniqueHeaders(rawRows[0]);
+    const headerDetails = getSheetHeaderDetails(state.workbook, sheetName, 0);
+    const allColumns = headerDetails.columns;
     const allRows = rawRows.slice(1)
       .map(row => {
         const record = {};
@@ -449,6 +457,7 @@
     state.eligibleChartColumns = chartColumns;
     state.selectedChartColumns = new Set();
     state.allColumns = allColumns;
+    state.columnOriginalHeaders = headerDetails.originalByColumn;
     state.allRows = allRows;
     state.columnStats = columnStats;
     updateAnalysisColumns();
@@ -539,14 +548,14 @@
     try {
       state.charts.forEach(chart => {
         if (selectedColumns.includes(chart.primaryColumn) && /^Chart \d+$/.test(chart.title)) {
-          chart.title = chart.primaryColumn;
+          chart.title = getActiveColumnDisplayName(chart.primaryColumn);
         }
       });
 
       for (let index = 0; index < missingColumns.length; index += 1) {
         const column = missingColumns[index];
         const chart = createChartConfig();
-        chart.title = column;
+        chart.title = getActiveColumnDisplayName(column);
         chart.primaryColumn = column;
         chart.topMode = String(CHART_RESPONSE_DISPLAY_LIMIT);
         chart.includeBlanks = false;
@@ -590,10 +599,11 @@
     } else {
       els.chartColumnChecklist.innerHTML = eligibleColumns.map((column, index) => {
         const id = `chart-column-${hashString(column)}-${index}`;
+        const displayName = getActiveColumnDisplayName(column);
         return `<label for="${id}" title="${escapeAttr(getColumnOptionLabel(column))}">
           <input id="${id}" type="checkbox" value="${escapeAttr(column)}" ${selected.has(column) ? 'checked' : ''}>
-          <span>${escapeHtml(column)}</span>
-          <small>${escapeHtml(getColumnOptionLabel(column, true))}</small>
+          <span>${escapeHtml(displayName)}</span>
+          <small>${escapeHtml(getColumnStatsLabel(column))}</small>
         </label>`;
       }).join('');
       els.chartColumnChecklist.querySelectorAll('input[type="checkbox"]').forEach(input => {
@@ -883,9 +893,9 @@
     card.querySelector('.category-count').textContent = `${formatNumber(categoryTotal)} categor${categoryTotal === 1 ? 'y' : 'ies'}`;
     const activeFilterCount = chart.filters.filter(filter => filter.selected.size).length;
     card.querySelector('.analysis-summary').textContent = chart.compareColumn
-      ? `Compared by ${chart.compareColumn}${activeFilterCount ? ` · ${activeFilterCount} filter${activeFilterCount === 1 ? '' : 's'}` : ''}`
+      ? `Compared by ${getActiveColumnDisplayName(chart.compareColumn)}${activeFilterCount ? ` · ${activeFilterCount} filter${activeFilterCount === 1 ? '' : 's'}` : ''}`
       : (activeFilterCount ? `${activeFilterCount} active filter${activeFilterCount === 1 ? '' : 's'}` : 'No filters or comparison');
-    card.querySelector('.question-detail').textContent = getColumnOptionLabel(chart.primaryColumn, true);
+    card.querySelector('.question-detail').textContent = getColumnOptionLabel(chart.primaryColumn);
 
     renderChart(chart, card, result);
     renderSummaryTable(chart, card, result);
@@ -954,7 +964,8 @@
       const selected = Array.from(filter.selected);
       const preview = selected.slice(0, 3).join(', ');
       const extra = selected.length > 3 ? ` +${selected.length - 3}` : '';
-      return `<div class="filter-chip"><span title="${escapeAttr(`${filter.column}: ${selected.join(', ')}`)}"><strong>${escapeHtml(filter.column)}:</strong> ${escapeHtml(preview)}${escapeHtml(extra)}</span><button type="button" data-filter-id="${escapeAttr(filter.id)}" aria-label="Remove ${escapeAttr(filter.column)} filter">×</button></div>`;
+      const displayName = getActiveColumnDisplayName(filter.column);
+      return `<div class="filter-chip"><span title="${escapeAttr(`${displayName}: ${selected.join(', ')}`)}"><strong>${escapeHtml(displayName)}:</strong> ${escapeHtml(preview)}${escapeHtml(extra)}</span><button type="button" data-filter-id="${escapeAttr(filter.id)}" aria-label="Remove ${escapeAttr(displayName)} filter">×</button></div>`;
     }).join('');
     container.querySelectorAll('button[data-filter-id]').forEach(button => button.addEventListener('click', () => {
       chart.filters = chart.filters.filter(filter => filter.id !== button.dataset.filterId);
@@ -1319,7 +1330,7 @@
       <table>
         <thead>
           <tr>
-            <th>${escapeHtml(chart.primaryColumn)}</th>
+            <th>${escapeHtml(getActiveColumnDisplayName(chart.primaryColumn))}</th>
             ${result.compareLabels.map(label => `<th class="number">${escapeHtml(label)}</th>`).join('')}
             <th class="number">Total</th>
           </tr>
@@ -1437,7 +1448,7 @@
     const csvRows = [];
 
     if (result.type === 'comparison') {
-      csvRows.push([chart.primaryColumn, ...result.compareLabels, 'Total']);
+      csvRows.push([getActiveColumnDisplayName(chart.primaryColumn), ...result.compareLabels, 'Total']);
       result.labels.forEach(primary => {
         csvRows.push([
           primary,
@@ -1446,7 +1457,7 @@
         ]);
       });
     } else {
-      csvRows.push(['Response', 'Count', 'Percentage']);
+      csvRows.push([getActiveColumnDisplayName(chart.primaryColumn), 'Count', 'Percentage']);
       result.items.forEach(item => csvRows.push([item.response, item.count, `${item.rowPercent}%`]));
     }
 
@@ -1456,7 +1467,7 @@
 
   function exportFilteredDataCsv(chart) {
     const rows = applyFilters(state.rows, chart.filters);
-    const csvRows = [state.columns, ...rows.map(row => state.columns.map(column => displayCell(row[column])))];
+    const csvRows = [state.columns.map(getActiveColumnDisplayName), ...rows.map(row => state.columns.map(column => displayCell(row[column])))];
     downloadCsv(csvRows, `${safeFileName(chart.title)}-filtered-data.csv`);
     showToast('Filtered data CSV generated.');
   }
@@ -1477,7 +1488,7 @@
 
     els.linkPrimaryName.textContent = state.fileName || 'Active dataset';
     els.linkPrimarySheet.textContent = state.sheetName || 'No sheet selected';
-    populateSelect(els.linkPrimaryField, state.allColumns, els.linkPrimaryField.value || pickLinkField(state.allColumns), false);
+    populateSelect(els.linkPrimaryField, state.allColumns, els.linkPrimaryField.value || pickLinkField(state.allColumns), false, 'None', column => getActiveColumnDisplayName(column));
     els.toggleLinkedSurveyBtn.textContent = els.linkedSurveySetup.classList.contains('hidden')
       ? (state.linkedSurvey.active ? 'Edit link' : 'Set up link')
       : 'Hide setup';
@@ -1489,6 +1500,12 @@
     return els.linkSecondarySource.value === 'file' ? state.linkedSurvey.secondaryWorkbook : state.workbook;
   }
 
+  function getLinkedQuestionDisplayName() {
+    const linked = state.linkedSurvey;
+    if (!linked.question) return '';
+    return getDisplayColumnName(linked.secondaryWorkbook || state.workbook, linked.secondarySheet || els.linkSecondarySheet.value, linked.question);
+  }
+
   function renderLinkedSurveySource() {
     if (!state.workbook) return;
     const fileMode = els.linkSecondarySource.value === 'file';
@@ -1498,7 +1515,7 @@
       : 'Using another sheet from the active workbook.';
     const workbook = getSecondaryWorkbook();
     const sheetNames = workbook
-      ? workbook.SheetNames.filter(name => fileMode || name !== state.sheetName)
+      ? getSurveySheetNames(workbook.SheetNames).filter(name => fileMode || name !== state.sheetName)
       : [];
     populateSelect(els.linkSecondarySheet, sheetNames, els.linkSecondarySheet.value, false);
     if (!sheetNames.length) els.linkSecondarySheet.innerHTML = `<option value="">${fileMode ? 'Upload a secondary file' : 'No other sheets available'}</option>`;
@@ -1535,10 +1552,10 @@
     const workbook = getSecondaryWorkbook();
     const sheetName = els.linkSecondarySheet.value;
     const columns = workbook && sheetName ? getSheetColumns(workbook, sheetName) : [];
-    populateSelect(els.linkSecondaryField, columns, els.linkSecondaryField.value || pickLinkField(columns), false);
+    populateSelect(els.linkSecondaryField, columns, els.linkSecondaryField.value || pickLinkField(columns), false, 'None', column => getDisplayColumnName(workbook, sheetName, column));
     const selectedQuestion = state.linkedSurvey.question;
     const questions = columns.filter(column => column !== els.linkSecondaryField.value);
-    populateSelect(els.linkQuestion, questions, selectedQuestion, true, state.linkedSurvey.result ? 'Select a secondary question' : 'Match surveys first');
+    populateSelect(els.linkQuestion, questions, selectedQuestion, true, state.linkedSurvey.result ? 'Select a secondary question' : 'Match surveys first', column => getDisplayColumnName(workbook, sheetName, column));
     if (!state.linkedSurvey.active || !selectedQuestion) els.linkQuestion.value = '';
     els.linkQuestion.disabled = !state.linkedSurvey.active;
   }
@@ -1562,6 +1579,7 @@
       if (!secondaryRows.length) throw new Error('The selected secondary sheet has no usable rows.');
       const result = LinkedSurvey.analyzeLink(state.allRows, secondaryRows, primaryField, secondaryField);
       resetLinkedSurveyMatch();
+      state.linkedSurvey.secondarySheet = secondarySheet;
       state.linkedSurvey.result = result;
       state.linkedSurvey.active = result.stats.matchedRows > 0;
       invalidateGeneratedReport();
@@ -1599,7 +1617,7 @@
       renderAllCharts();
       renderReportColumns();
       if (state.linkedSurvey.question) {
-        showLinkValidation(`Linked breakdown ready: ${state.linkedSurvey.question}`, '');
+        showLinkValidation(`Linked breakdown ready: ${getLinkedQuestionDisplayName()}`, '');
         showToast('Linked survey breakdown added to charts and reports.');
       } else {
         showLinkValidation('Surveys are matched. Select a secondary question to add a breakdown.', '');
@@ -1619,6 +1637,7 @@
     if (linked.column) state.columnStats.delete(linked.column);
     linked.active = false;
     linked.result = null;
+    linked.secondarySheet = '';
     linked.question = '';
     linked.column = '';
   }
@@ -1696,14 +1715,14 @@
     if (!result || !result.unmatched.length) return;
     els.linkDetailsTitle.textContent = 'Unmatched primary records';
     const columns = state.allColumns;
-    els.linkDetailsBody.innerHTML = `<table><thead><tr><th>Source row</th><th>Issue</th>${columns.map(column => `<th>${escapeHtml(column)}</th>`).join('')}</tr></thead><tbody>${result.unmatched.map(item => `<tr><td class="number">${item.rowNumber}</td><td>${escapeHtml(item.reason)}</td>${columns.map(column => `<td>${escapeHtml(displayCell(item.row[column]))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    els.linkDetailsBody.innerHTML = `<table><thead><tr><th>Source row</th><th>Issue</th>${columns.map(column => `<th>${escapeHtml(getActiveColumnDisplayName(column))}</th>`).join('')}</tr></thead><tbody>${result.unmatched.map(item => `<tr><td class="number">${item.rowNumber}</td><td>${escapeHtml(item.reason)}</td>${columns.map(column => `<td>${escapeHtml(displayCell(item.row[column]))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
     els.linkDetailsDialog.showModal();
   }
 
   function downloadUnmatchedRecords() {
     const result = state.linkedSurvey.result;
     if (!result || !result.unmatched.length) return;
-    const rows = [['Source row', 'Matching value', 'Issue', ...state.allColumns]];
+    const rows = [['Source row', 'Matching value', 'Issue', ...state.allColumns.map(getActiveColumnDisplayName)]];
     result.unmatched.forEach(item => rows.push([item.rowNumber, item.value, item.reason, ...state.allColumns.map(column => displayCell(item.row[column]))]));
     downloadCsv(rows, `${safeFileName(state.fileName)}-unmatched-records.csv`);
     showToast('Unmatched records CSV generated.');
@@ -1808,7 +1827,7 @@
       return;
     }
 
-    const sheetNames = source.workbook.SheetNames;
+    const sheetNames = getSurveySheetNames(source.workbook.SheetNames);
     populateSelect(els.reportDataSheetSelect, sheetNames, pickDataSheet(sheetNames), false);
     if (!normalizeValue(els.reportNameInput.value)) els.reportNameInput.value = 'Question breakdown';
     renderReportColumns();
@@ -1846,17 +1865,18 @@
     const ignoredColumns = columnStats.filter(item => item.uniqueCount > REPORT_UNIQUE_VALUE_LIMIT);
     const responseColumns = primaryColumns.filter(column => !isLikelyMetadataColumn(column));
     const defaultResponseColumns = responseColumns.filter(column => eligibleQuestionColumns.includes(column));
-    renderCheckboxList(els.questionChecklist, eligibleQuestionColumns.map(column => ({ value: column, label: column })), {
+    const displayColumn = column => getDisplayColumnName(source.workbook, sheetName, column);
+    renderCheckboxList(els.questionChecklist, eligibleQuestionColumns.map(column => ({ value: column, label: displayColumn(column) })), {
       checkedValues: defaultResponseColumns.length ? defaultResponseColumns : eligibleQuestionColumns,
       emptyText: 'No response columns found',
       onChange: updateReportSelectionCount
     });
-    populateSelect(els.primaryBreakdownSelect, eligibleBreakdownColumns, linkedColumn, true, 'No main breakdown');
+    populateSelect(els.primaryBreakdownSelect, eligibleBreakdownColumns, linkedColumn, true, 'No main breakdown', displayColumn);
     els.primaryBreakdownSelect.value = linkedColumn || '';
-    populateSelect(els.reportFilterColumnSelect, eligibleFilterColumns, '', true, 'No filter');
+    populateSelect(els.reportFilterColumnSelect, eligibleFilterColumns, '', true, 'No filter', displayColumn);
     els.reportFilterColumnSelect.value = '';
     renderReportFilterValues();
-    updateReportColumnNote(ignoredColumns, emptyColumns);
+    updateReportColumnNote(ignoredColumns, emptyColumns, displayColumn);
     filterReportQuestions();
     updateReportSelectionCount();
   }
@@ -1905,7 +1925,7 @@
       });
   }
 
-  function updateReportColumnNote(ignoredColumns, emptyColumns = []) {
+  function updateReportColumnNote(ignoredColumns, emptyColumns = [], displayColumn = column => column) {
     if (!els.reportColumnNote) return;
     if (!ignoredColumns.length && !emptyColumns.length) {
       els.reportColumnNote.textContent = `Only columns with ${REPORT_UNIQUE_VALUE_LIMIT} or fewer unique responses are shown here.`;
@@ -1914,12 +1934,12 @@
 
     const parts = [];
     if (ignoredColumns.length) {
-      const names = ignoredColumns.slice(0, 4).map(item => item.column).join(', ');
+      const names = ignoredColumns.slice(0, 4).map(item => displayColumn(item.column)).join(', ');
       const extra = ignoredColumns.length > 4 ? `, and ${ignoredColumns.length - 4} more` : '';
       parts.push(`${ignoredColumns.length} column${ignoredColumns.length === 1 ? '' : 's'} hidden because ${ignoredColumns.length === 1 ? 'it has' : 'they have'} more than ${REPORT_UNIQUE_VALUE_LIMIT} unique responses: ${names}${extra}`);
     }
     if (emptyColumns.length) {
-      const names = emptyColumns.slice(0, 4).map(item => item.column).join(', ');
+      const names = emptyColumns.slice(0, 4).map(item => displayColumn(item.column)).join(', ');
       const extra = emptyColumns.length > 4 ? `, and ${emptyColumns.length - 4} more` : '';
       parts.push(`${emptyColumns.length} empty column${emptyColumns.length === 1 ? '' : 's'} hidden: ${names}${extra}`);
     }
@@ -1992,16 +2012,22 @@
     return {
       column,
       values: new Set(selectedValues.map(normalizeForMatch)),
-      label: formatReportFilterLabel(column, selectedValues, totalValues)
+      label: formatReportFilterLabel(column, selectedValues, totalValues, getCurrentReportColumnDisplayName(column))
     };
   }
 
-  function formatReportFilterLabel(column, selectedValues, totalValues) {
-    if (!selectedValues.length) return `${column}: no values selected`;
-    if (selectedValues.length === totalValues) return `${column}: all ${totalValues} value${totalValues === 1 ? '' : 's'}`;
+  function getCurrentReportColumnDisplayName(column) {
+    const source = getSelectedReportSource();
+    const sheetName = els.reportDataSheetSelect.value;
+    return source && sheetName ? getDisplayColumnName(source.workbook, sheetName, column) : (column || '');
+  }
+
+  function formatReportFilterLabel(column, selectedValues, totalValues, displayColumn = column) {
+    if (!selectedValues.length) return `${displayColumn}: no values selected`;
+    if (selectedValues.length === totalValues) return `${displayColumn}: all ${totalValues} value${totalValues === 1 ? '' : 's'}`;
     const preview = selectedValues.slice(0, 5).join(', ');
     const extra = selectedValues.length > 5 ? `, and ${selectedValues.length - 5} more` : '';
-    return `${column}: ${preview}${extra}`;
+    return `${displayColumn}: ${preview}${extra}`;
   }
 
   function applyReportFilter(dataRows, filter) {
@@ -2015,7 +2041,7 @@
     const rows = [];
     const skipped = [];
     let questionCount = 0;
-    const breakdownLabel = breakdownColumns.length ? breakdownColumns[0] : 'No main breakdown selected';
+    const breakdownLabel = breakdownColumns.length ? getCurrentReportColumnDisplayName(breakdownColumns[0]) : 'No main breakdown selected';
     questions.forEach(question => {
       if (!(question.column in (dataRows[0] || {}))) {
         skipped.push(question.column);
@@ -2221,10 +2247,10 @@
     return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   }
 
-  function populateSelect(select, values, selectedValue, includeNone, noneLabel = 'None') {
+  function populateSelect(select, values, selectedValue, includeNone, noneLabel = 'None', labelForValue = value => value) {
     const previous = select.value;
     const options = includeNone ? [`<option value="">${escapeHtml(noneLabel)}</option>`] : [];
-    options.push(...values.map(value => `<option value="${escapeAttr(value)}">${escapeHtml(value)}</option>`));
+    options.push(...values.map(value => `<option value="${escapeAttr(value)}">${escapeHtml(labelForValue(value))}</option>`));
     select.innerHTML = options.join('');
 
     if (selectedValue && values.includes(selectedValue)) select.value = selectedValue;
@@ -2238,7 +2264,7 @@
   }
 
   function pickDataSheet(sheetNames) {
-    return sheetNames.find(name => !/question|config|input|generation|site|scs|lookup|mapping/i.test(name)) || sheetNames[0] || '';
+    return sheetNames.find(name => !isDictionarySheet(name) && !/question|config|input|generation|site|scs|lookup|mapping/i.test(name)) || sheetNames[0] || '';
   }
 
   function pickColumn(columns, pattern) {
@@ -2250,14 +2276,74 @@
     return columns.find(column => exactPatterns.some(pattern => pattern.test(column))) || columns[0] || '';
   }
 
+  function getSurveySheetNames(sheetNames) {
+    const names = Array.isArray(sheetNames) ? sheetNames : [];
+    return typeof DataDictionary === 'undefined'
+      ? names
+      : names.filter(name => !DataDictionary.isDictionarySheetName(name));
+  }
+
+  function isDictionarySheet(sheetName) {
+    return typeof DataDictionary !== 'undefined' && DataDictionary.isDictionarySheetName(sheetName);
+  }
+
+  function getWorkbookDictionary(workbook) {
+    if (!workbook || typeof DataDictionary === 'undefined') return null;
+    if (workbookDictionaryCache.has(workbook)) return workbookDictionaryCache.get(workbook);
+
+    const dictionarySheet = workbook.SheetNames.find(name => DataDictionary.isDictionarySheetName(name));
+    const dictionary = dictionarySheet ? DataDictionary.create(getSheetMatrix(workbook, dictionarySheet)) : null;
+    workbookDictionaryCache.set(workbook, dictionary);
+    return dictionary;
+  }
+
+  function getDisplayColumnName(workbook, sheetName, column) {
+    const fallback = normalizeValue(column);
+    if (!fallback || !workbook || !sheetName || typeof DataDictionary === 'undefined') return fallback;
+
+    const isActiveSheet = workbook === state.workbook && sheetName === state.sheetName;
+    const originalHeader = isActiveSheet
+      ? (state.columnOriginalHeaders.get(column) || fallback)
+      : (getSheetHeaderDetails(workbook, sheetName).originalByColumn.get(column) || fallback);
+    return DataDictionary.getDisplayQuestion(getWorkbookDictionary(workbook), sheetName, originalHeader) || fallback;
+  }
+
+  function getActiveColumnDisplayName(column) {
+    return getDisplayColumnName(state.workbook, state.sheetName, column);
+  }
+
+  function getColumnStatsLabel(column) {
+    const stats = state.columnStats.get(column);
+    if (!stats) return '';
+    return `${stats.type} · ${formatNumber(stats.answeredCount)} answered · ${formatNumber(stats.uniqueCount)} unique`;
+  }
+
   function isLikelyMetadataColumn(column) {
     return ChartRules.isLikelyMetadataColumn(column);
   }
 
   function getSheetColumns(workbook, sheetName) {
+    return getSheetHeaderDetails(workbook, sheetName).columns;
+  }
+
+  function getSheetHeaderDetails(workbook, sheetName, explicitHeaderRow = null) {
+    if (!workbook) return { headerRow: 0, columns: [], originalByColumn: new Map() };
+    let workbookHeaders = sheetHeaderCache.get(workbook);
+    if (!workbookHeaders) {
+      workbookHeaders = new Map();
+      sheetHeaderCache.set(workbook, workbookHeaders);
+    }
+    const cacheKey = `${sheetName}\u0000${explicitHeaderRow === null ? 'auto' : explicitHeaderRow}`;
+    if (workbookHeaders.has(cacheKey)) return workbookHeaders.get(cacheKey);
+
     const rows = getSheetMatrix(workbook, sheetName);
-    const headerRow = findHeaderRow(rows);
-    return rows[headerRow] ? makeUniqueHeaders(rows[headerRow]) : [];
+    const headerRow = explicitHeaderRow === null ? findHeaderRow(rows) : explicitHeaderRow;
+    const rawHeaders = rows[headerRow] || [];
+    const columns = makeUniqueHeaders(rawHeaders);
+    const originalByColumn = new Map(columns.map((column, index) => [column, normalizeValue(rawHeaders[index]) || column]));
+    const details = { headerRow, columns, originalByColumn };
+    workbookHeaders.set(cacheKey, details);
+    return details;
   }
 
   function getSheetRecords(workbook, sheetName) {
@@ -2268,9 +2354,10 @@
     }
     if (workbookRecords.has(sheetName)) return workbookRecords.get(sheetName);
 
+    const headerDetails = getSheetHeaderDetails(workbook, sheetName);
     const rows = getSheetMatrix(workbook, sheetName);
-    const headerRow = findHeaderRow(rows);
-    const headers = rows[headerRow] ? makeUniqueHeaders(rows[headerRow]) : [];
+    const headerRow = headerDetails.headerRow;
+    const headers = headerDetails.columns;
     const records = rows.slice(headerRow + 1)
       .map(row => {
         const record = {};
@@ -2300,7 +2387,9 @@
       return { rows: getSheetRecords(source.workbook, sheetName), column: '' };
     }
     if (state.linkedSurvey.question) {
-      return LinkedSurvey.enrichMatchedRows(state.linkedSurvey.result, state.linkedSurvey.question);
+      return LinkedSurvey.enrichMatchedRows(state.linkedSurvey.result, state.linkedSurvey.question, {
+        displayQuestion: getLinkedQuestionDisplayName()
+      });
     }
     return {
       rows: state.linkedSurvey.result.matched.map(match => ({ ...match.primary, __linkedSiteKey: match.key })),
@@ -2518,7 +2607,9 @@
     if (linked.active && linked.result) {
       analysisRows = linked.result.matched.map(match => ({ ...match.primary, __linkedSiteKey: match.key }));
       if (linked.question) {
-        const enriched = LinkedSurvey.enrichMatchedRows(linked.result, linked.question);
+        const enriched = LinkedSurvey.enrichMatchedRows(linked.result, linked.question, {
+          displayQuestion: getLinkedQuestionDisplayName()
+        });
         analysisRows = enriched.rows;
         linked.column = enriched.column;
         const values = analysisRows.flatMap(row => getResponseLabels(row[linked.column])).filter(value => value !== NO_RESPONSE);
@@ -2540,14 +2631,21 @@
 
   function getColumnOptionLabel(column, compact = false) {
     const stats = state.columnStats.get(column);
-    if (!stats) return column || 'No question selected';
-    if (compact) return `${stats.type} · ${formatNumber(stats.answeredCount)} answered · ${formatNumber(stats.uniqueCount)} unique`;
-    return `${column} — ${stats.type} · ${formatNumber(stats.answeredCount)} answered · ${formatNumber(stats.uniqueCount)} unique`;
+    const displayName = getActiveColumnDisplayName(column);
+    if (!stats) return displayName || 'No question selected';
+    const statsLabel = getColumnStatsLabel(column);
+    if (compact && !getWorkbookDictionary(state.workbook)) return statsLabel;
+    if (compact) return `${displayName} · ${statsLabel}`;
+    return `${displayName} — ${statsLabel}`;
   }
 
   function filterColumnOptions(select, query, selectedValue, includeNone) {
     const searchText = normalizeValue(query).toLowerCase();
-    const matching = state.columns.filter(column => !searchText || column.toLowerCase().includes(searchText));
+    const matching = state.columns.filter(column => {
+      if (!searchText) return true;
+      return column.toLowerCase().includes(searchText)
+        || getActiveColumnDisplayName(column).toLowerCase().includes(searchText);
+    });
     if (selectedValue && state.columns.includes(selectedValue) && !matching.includes(selectedValue)) matching.unshift(selectedValue);
     const options = includeNone ? ['<option value="">No comparison</option>'] : [];
     options.push(...matching.map(column => `<option value="${escapeAttr(column)}">${escapeHtml(getColumnOptionLabel(column))}</option>`));
@@ -2634,10 +2732,11 @@
       const stats = state.columnStats.get(column);
       const automaticallyExcluded = !eligibleChartColumns.has(column);
       const inAnalysis = state.columns.includes(column);
+      const displayName = getActiveColumnDisplayName(column);
       const exclusionReason = isLikelyMetadataColumn(column)
         ? 'metadata column'
         : (state.hiddenAnalysisColumns.has(column) ? 'hidden from analysis' : 'not selectable');
-      return `<div class="column-profile"><strong title="${escapeAttr(column)}">${escapeHtml(column)}</strong><label title="${automaticallyExcluded ? `Automatically excluded: ${exclusionReason}` : 'Show or hide this column in chart analysis'}"><input type="checkbox" data-analysis-column="${escapeAttr(column)}" aria-label="Analyze ${escapeAttr(column)}" ${inAnalysis ? 'checked' : ''} ${automaticallyExcluded ? 'disabled' : ''}> Analyze</label><small>${escapeHtml(stats.type)} · ${formatNumber(stats.uniqueCount)} unique · ${formatNumber(stats.missingCount)} missing${automaticallyExcluded ? ` · ${escapeHtml(exclusionReason)}` : ''}</small></div>`;
+      return `<div class="column-profile"><strong title="${escapeAttr(displayName)}">${escapeHtml(displayName)}</strong><label title="${automaticallyExcluded ? `Automatically excluded: ${exclusionReason}` : 'Show or hide this column in chart analysis'}"><input type="checkbox" data-analysis-column="${escapeAttr(column)}" aria-label="Analyze ${escapeAttr(displayName)}" ${inAnalysis ? 'checked' : ''} ${automaticallyExcluded ? 'disabled' : ''}> Analyze</label><small>${escapeHtml(stats.type)} · ${formatNumber(stats.uniqueCount)} unique · ${formatNumber(stats.missingCount)} missing${automaticallyExcluded ? ` · ${escapeHtml(exclusionReason)}` : ''}</small></div>`;
     }).join('');
     els.columnProfiles.querySelectorAll('input[data-analysis-column]').forEach(input => input.addEventListener('change', () => {
       if (input.checked) state.hiddenAnalysisColumns.delete(input.dataset.analysisColumn);
@@ -2650,7 +2749,7 @@
     }));
 
     els.previewResultCount.textContent = `Showing ${formatNumber(visibleRows.length)} of ${formatNumber(matchingRows.length)} matching rows`;
-    els.dataPreviewTable.innerHTML = `<table><thead><tr><th>#</th>${state.allColumns.map(column => `<th title="${escapeAttr(column)}">${escapeHtml(truncateLabel(column, 42))}</th>`).join('')}</tr></thead><tbody>${visibleRows.map((row, index) => `<tr><td class="number">${index + 1}</td>${state.allColumns.map(column => {
+    els.dataPreviewTable.innerHTML = `<table><thead><tr><th>#</th>${state.allColumns.map(column => { const displayName = getActiveColumnDisplayName(column); return `<th title="${escapeAttr(displayName)}">${escapeHtml(truncateLabel(displayName, 42))}</th>`; }).join('')}</tr></thead><tbody>${visibleRows.map((row, index) => `<tr><td class="number">${index + 1}</td>${state.allColumns.map(column => {
       const value = displayCell(row[column]);
       return `<td title="${escapeAttr(value)}">${value ? escapeHtml(value) : '<span class="missing-value">Blank</span>'}</td>`;
     }).join('')}</tr>`).join('') || `<tr><td colspan="${state.allColumns.length + 1}">No rows match your search.</td></tr>`}</tbody></table>`;
@@ -2785,6 +2884,7 @@
     state.columns = [];
     state.allRows = [];
     state.allColumns = [];
+    state.columnOriginalHeaders = new Map();
     state.rawColumnCount = 0;
     state.excludedChartColumns = [];
     state.eligibleChartColumns = [];
@@ -2801,6 +2901,7 @@
       active: false,
       secondaryWorkbook: null,
       secondaryFileName: '',
+      secondarySheet: '',
       result: null,
       question: '',
       column: ''

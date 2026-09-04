@@ -56,6 +56,13 @@ test('enriches single-select secondary questions', () => {
   assert.deepEqual(Array.from(enriched.rows[0][enriched.column]), ['Urban']);
 });
 
+test('uses an optional display question for the linked analysis column', () => {
+  const result = LinkedSurvey.analyzeLink([{ Site: 'A' }], [{ Site: 'A', Type: 'Urban' }], 'Site', 'Site');
+  const enriched = LinkedSurvey.enrichMatchedRows(result, 'Type', { displayQuestion: 'Which setting applies?' });
+  assert.equal(enriched.column, 'Linked survey: Which setting applies?');
+  assert.deepEqual(Array.from(enriched.rows[0][enriched.column]), ['Urban']);
+});
+
 test('expands multi-select answers into every applicable category', () => {
   const primary = [{ Site: 'A', Answer: 'Yes' }, { Site: 'A', Answer: 'No' }];
   const secondary = [{ Site: 'A', Strategies: 'Strategy A; Strategy C' }];

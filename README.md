@@ -35,6 +35,7 @@ Uploaded files are processed only in your browser. The app does not use a backen
 - `index.html`
 - `style.css`
 - `script.js`
+- `data-dictionary.js`
 - `README.md`
 
 The app uses CDN links for:
@@ -46,6 +47,10 @@ The app uses CDN links for:
 ## Eligible chart selection
 
 The Charts workspace lists every non-metadata response column before generating anything. Select individual questions or **Select all**, adjust the selection as needed, and choose **Generate Selected Charts**. Blank responses are not shown in generated charts. Existing charts are preserved, and repeating generation adds only selected questions that do not already have a chart. Each generated chart defaults to an automatic view, and its header **View** selector lets you switch to horizontal or vertical bars, pie, doughnut, line, or table-only output. For stacked charts, choose a comparison column in the chart settings and then select a stacked comparison view.
+
+## Optional Data Dictionary
+
+An uploaded workbook may include a sheet named **Data Dictionary**. Put the survey sheet name in column A, the original/header name in column B, and the full display question in column C. A header row is optional. The analyzer matches trimmed, case-insensitive sheet and header names, applies mappings independently per survey sheet, and falls back to the original header when a mapping or display question is missing. Raw headers remain the internal data keys, so filters, matching, and calculations are not changed by display text.
 
 ## Question Breakdown Report
 
