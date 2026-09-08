@@ -33,6 +33,23 @@ test('counts normalized response labels when applying the unique-value limit', (
   assert.equal(ChartRules.countUniqueAnswers(rows, 'Question'), 2);
 });
 
+test('splits semicolon-delimited multi-select responses into unique choices', () => {
+  assert.deepEqual(
+    Array.from(ChartRules.splitResponseLabels([' A; B ', 'B;C', 'Single'])),
+    ['A', 'B', 'C', 'Single']
+  );
+  assert.equal(
+    ChartRules.countUniqueAnswers([{ Question: 'A; B' }, { Question: 'B; C' }], 'Question'),
+    3
+  );
+});
+
+test('keeps single responses and ignores blank multi-select choices', () => {
+  assert.deepEqual(Array.from(ChartRules.splitResponseLabels('One')), ['One']);
+  assert.deepEqual(Array.from(ChartRules.splitResponseLabels(' A; ; B ')), ['A', 'B']);
+  assert.deepEqual(Array.from(ChartRules.splitResponseLabels(' ; ')), []);
+});
+
 test('excludes questions with only one unique answer', () => {
   const rows = [
     { Question: 'Yes' },

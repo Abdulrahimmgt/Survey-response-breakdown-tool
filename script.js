@@ -1002,12 +1002,12 @@
     let items = Array.from(counts, ([response, count]) => ({
       response,
       count,
-      rowPercent: (chart.includeBlanks ? rows.length : nonBlank) ? roundOne((count / (chart.includeBlanks ? rows.length : nonBlank)) * 100) : 0,
+      rowPercent: nonBlank ? roundOne((count / nonBlank) * 100) : 0,
       nonBlankPercent: nonBlank ? roundOne((count / nonBlank) * 100) : 0
     }));
 
     items = sortItems(items, chart.sortMode);
-    items = applyTopGrouping(items, chart.topMode, rows.length, nonBlank);
+    items = applyTopGrouping(items, chart.topMode, nonBlank, nonBlank);
 
     return {
       type: 'single',
@@ -1397,11 +1397,10 @@
   }
 
   function getResponseLabels(value) {
-    if (Array.isArray(value)) {
-      const labels = value.map(getResponseLabel).filter(label => label !== NO_RESPONSE);
-      return labels.length ? Array.from(new Set(labels)) : [NO_RESPONSE];
-    }
-    return [getResponseLabel(value)];
+    const labels = ChartRules.splitResponseLabels(value)
+      .map(getResponseLabel)
+      .filter(label => label !== NO_RESPONSE);
+    return labels.length ? labels : [NO_RESPONSE];
   }
 
   function getResponseLabel(value) {
@@ -2084,7 +2083,7 @@
       combos.forEach((combo, comboIndex) => {
         const filtered = dataRows.filter(dataRow => combo.conditions.every(condition => getReportValues(dataRow[condition.column]).includes(condition.value)));
         const counts = countAnswers(filtered, questionColumn);
-        const total = Array.from(counts.values()).reduce((sum, count) => sum + count, 0);
+        const total = filtered.filter(dataRow => getReportValues(dataRow[questionColumn]).length > 0).length;
         const count = counts.get(normalizeForMatch(answer)) || 0;
         const percent = total ? count / total : 0;
         const countIndex = 1 + (comboIndex * 2);

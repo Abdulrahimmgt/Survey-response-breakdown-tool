@@ -12,9 +12,15 @@
     return String(value).trim();
   }
 
+  function splitResponseLabels(value) {
+    const values = Array.isArray(value)
+      ? value.flatMap(splitResponseLabels)
+      : text(value).split(';').map(item => item.trim());
+    return Array.from(new Set(values.filter(Boolean)));
+  }
+
   function answerLabels(value) {
-    const values = Array.isArray(value) ? value.flatMap(answerLabels) : [text(value)];
-    return values.filter(Boolean);
+    return splitResponseLabels(value);
   }
 
   function normalizeAnswer(value) {
@@ -97,6 +103,7 @@
     getSelectableChartColumns,
     getSelectedChartColumns,
     isLikelyMetadataColumn,
-    shouldUseYesNoLabels
+    shouldUseYesNoLabels,
+    splitResponseLabels
   };
 });

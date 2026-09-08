@@ -11,6 +11,7 @@ A static web app for analyzing Excel, CSV, and public Google Sheets survey-style
 - Let users choose any non-metadata response column for a chart, including empty and open-ended-style columns.
 - Choose one or more response questions and generate all selected charts with a single action, without duplicating charts already in the workspace.
 - Analyze one column by response count and percentage.
+- Split semicolon-delimited multi-select responses into individual dashboard choices without changing raw data.
 - Compare one column against another.
 - Add one or more checklist filters.
 - Hide selected responses or manually combine similar response labels.
@@ -51,6 +52,10 @@ The Charts workspace lists every non-metadata response column before generating 
 ## Optional Data Dictionary
 
 An uploaded workbook may include a sheet named **Data Dictionary**. Put the survey sheet name in column A, the original/header name in column B, and the full display question in column C. A header row is optional. The analyzer matches trimmed, case-insensitive sheet and header names, applies mappings independently per survey sheet, and falls back to the original header when a mapping or display question is missing. Raw headers remain the internal data keys, so filters, matching, and calculations are not changed by display text.
+
+## Multi-select responses
+
+For dashboard charts, filters, and breakdown reports, semicolons separate multiple selected choices. Each choice is counted independently and choices are sorted by descending count by default. Percentages use the number of respondents with at least one selection as the denominator, so multi-select percentages may total more than 100%. The source workbook, raw response values, and data preview remain unchanged.
 
 ## Question Breakdown Report
 
