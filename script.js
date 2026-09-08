@@ -1021,18 +1021,30 @@
   function buildComparisonResult(rows, chart) {
     const matrix = new Map();
     const comparisonLabels = new Set();
+    const rawPrimaryRespondentTotals = new Map();
+    const rawCompareRespondentTotals = new Map();
     let total = 0;
+    let respondentTotal = 0;
     const primaryColumnLabels = getColumnNonBlankLabels(rows, chart.primaryColumn);
     const compareColumnLabels = getColumnNonBlankLabels(rows, chart.compareColumn);
     const usePrimaryYesNoLabels = ChartRules.shouldUseYesNoLabels(primaryColumnLabels);
     const useCompareYesNoLabels = ChartRules.shouldUseYesNoLabels(compareColumnLabels);
 
     rows.forEach(row => {
-      const primaries = getDisplayResponseLabelsForColumn(row[chart.primaryColumn], primaryColumnLabels, usePrimaryYesNoLabels).map(label => getMergedLabel(label, chart.merges));
-      const comparisons = getDisplayResponseLabelsForColumn(row[chart.compareColumn], compareColumnLabels, useCompareYesNoLabels);
+      const primaries = uniqueList(getDisplayResponseLabelsForColumn(row[chart.primaryColumn], primaryColumnLabels, usePrimaryYesNoLabels).map(label => getMergedLabel(label, chart.merges)))
+        .filter(primary => !chart.hiddenResponses.has(primary));
+      const comparisons = uniqueList(getDisplayResponseLabelsForColumn(row[chart.compareColumn], compareColumnLabels, useCompareYesNoLabels));
+      if (!chart.includeBlanks && (primaries.includes(NO_RESPONSE) || comparisons.includes(NO_RESPONSE))) return;
+      if (!primaries.length || !comparisons.length) return;
+
+      primaries.forEach(primary => {
+        rawPrimaryRespondentTotals.set(primary, (rawPrimaryRespondentTotals.get(primary) || 0) + 1);
+      });
+      comparisons.forEach(comparison => {
+        rawCompareRespondentTotals.set(comparison, (rawCompareRespondentTotals.get(comparison) || 0) + 1);
+      });
+      respondentTotal += 1;
       primaries.forEach(primary => comparisons.forEach(comparison => {
-        if (!chart.includeBlanks && (primary === NO_RESPONSE || comparison === NO_RESPONSE)) return;
-        if (chart.hiddenResponses.has(primary)) return;
         if (!matrix.has(primary)) matrix.set(primary, new Map());
         matrix.get(primary).set(comparison, (matrix.get(primary).get(comparison) || 0) + 1);
         comparisonLabels.add(comparison);
@@ -1071,15 +1083,17 @@
       label,
       primaryLabels.reduce((sum, primary) => sum + (cappedMatrix.get(primary).get(label) || 0), 0)
     ]));
+    const primaryRespondentTotals = aggregateCappedTotals(primaryLabels, rawPrimaryLabels, rawPrimaryRespondentTotals);
+    const compareRespondentTotals = aggregateCappedTotals(compareLabels, rawCompareLabels, rawCompareRespondentTotals);
 
     const valueMode = chart.compareType === 'stacked100' ? 'primaryPercent' : chart.compareValueMode;
     const datasets = compareLabels.map((compare, index) => ({
       label: compare,
       data: primaryLabels.map(primary => {
         const count = cappedMatrix.get(primary).get(compare) || 0;
-        if (valueMode === 'primaryPercent') return primaryTotals.get(primary) ? roundOne((count / primaryTotals.get(primary)) * 100) : 0;
-        if (valueMode === 'comparePercent') return compareTotals.get(compare) ? roundOne((count / compareTotals.get(compare)) * 100) : 0;
-        if (valueMode === 'totalPercent') return total ? roundOne((count / total) * 100) : 0;
+        if (valueMode === 'primaryPercent') return primaryRespondentTotals.get(primary) ? roundOne((count / primaryRespondentTotals.get(primary)) * 100) : 0;
+        if (valueMode === 'comparePercent') return compareRespondentTotals.get(compare) ? roundOne((count / compareRespondentTotals.get(compare)) * 100) : 0;
+        if (valueMode === 'totalPercent') return respondentTotal ? roundOne((count / respondentTotal) * 100) : 0;
         return count;
       }),
       backgroundColor: COLORS[index % COLORS.length],
@@ -1095,10 +1109,23 @@
       matrix: cappedMatrix,
       primaryTotals,
       compareTotals,
+      primaryRespondentTotals,
+      compareRespondentTotals,
       total,
+      respondentTotal,
       datasets,
       valueMode
     };
+  }
+
+  function aggregateCappedTotals(cappedLabels, rawLabels, rawTotals) {
+    return new Map(cappedLabels.map(label => [
+      label,
+      rawLabels.reduce((sum, rawLabel) => {
+        const cappedLabel = cappedLabels.includes(rawLabel) ? rawLabel : 'Other';
+        return cappedLabel === label ? sum + (rawTotals.get(rawLabel) || 0) : sum;
+      }, 0)
+    ]));
   }
 
   function renderChart(chart, card, result) {
@@ -1308,13 +1335,13 @@
     const suffix = mode === 'counts' ? '' : '%';
     renderTableNote(card, result.labels.length, 'comparison rows');
     const rows = result.labels.map(primary => {
-      const total = result.primaryTotals.get(primary) || 0;
+      const total = result.primaryRespondentTotals.get(primary) || 0;
       const cells = result.compareLabels.map(compare => {
         const count = result.matrix.get(primary).get(compare) || 0;
         let value = count;
         if (mode === 'primaryPercent') value = total ? roundOne((count / total) * 100) : 0;
-        if (mode === 'comparePercent') value = result.compareTotals.get(compare) ? roundOne((count / result.compareTotals.get(compare)) * 100) : 0;
-        if (mode === 'totalPercent') value = result.total ? roundOne((count / result.total) * 100) : 0;
+        if (mode === 'comparePercent') value = result.compareRespondentTotals.get(compare) ? roundOne((count / result.compareRespondentTotals.get(compare)) * 100) : 0;
+        if (mode === 'totalPercent') value = result.respondentTotal ? roundOne((count / result.respondentTotal) * 100) : 0;
         return `<td class="number">${escapeHtml(formatTableValue(value, suffix))}</td>`;
       }).join('');
       return `
